@@ -1,0 +1,21 @@
+# Caches / fichiers inutiles
+.qodo
+.history
+
+
+# Fichiers sensibles
+zscaler_bundle.pem
+racine-zscaler.pem.cer
+Zscaler Root CA.pem
+Zscaler Intermediate Root CA (zscaler.net).pem
+Zscaler Intermediate Root CA (zscaler.net).crt
+
+connexion_mysql.txt
+
+
+
+# Dossiers à ignorer
+data
+outputs
+env_loice
+csv
