@@ -977,6 +977,8 @@ class PCAProcessor:
         print(f"Analyse des groupes unifiés sauvegardée dans '{output_file}'")
         
         return df_analysis
+    
+    
 
 
     def run_acp_complet(self):
@@ -1099,65 +1101,77 @@ class ClusteringProcessor:
         """
         Applique l'algorithme K-means sur les données PCA avec le nombre de clusters
         spécifié ou le meilleur k détecté précédemment.
-
-        Args:
-            n_clusters_override (int, optional): Le nombre de clusters à utiliser.
-                                                Si fourni, il prévaut sur self.best_k.
-                                                Si None, self.best_k est utilisé.
+        Réassigne aussi les labels de clusters pour cohérence entre visualisation et stats.
         """
         pcs = [col for col in self.df_pca.columns if col.startswith('PC')]
         if not pcs:
             raise ValueError("Aucune colonne 'PC' trouvée dans self.df_pca. Assurez-vous que la PCA a été effectuée.")
 
-        # Supprimer les lignes avec des valeurs NaN dans les colonnes PCA avant le clustering
+        # Supprimer les lignes NaN
         X = self.df_pca[pcs].dropna().values
         if X.size == 0:
             raise ValueError("Le DataFrame PCA est vide après avoir supprimé les NaN, impossible d'effectuer le clustering.")
 
-        # Déterminer le nombre de clusters à utiliser
+        # Déterminer le nombre de clusters
         if n_clusters_override is not None:
             n_clusters_to_use = n_clusters_override
-            print(f"Clustering final avec k = {n_clusters_to_use} (nombre de clusters spécifié manuellement)...")
+            print(f"Clustering final avec k = {n_clusters_to_use} (manuel)...")
         elif self.best_k is not None:
             n_clusters_to_use = self.best_k
             print(f"Clustering final avec k = {n_clusters_to_use} (meilleur k détecté automatiquement)...")
         else:
-            raise ValueError("Aucun nombre de clusters n'a été déterminé. Veuillez exécuter '_calculer_inertie()' d'abord ou spécifier 'n_clusters_override'.")
+            raise ValueError("Aucun nombre de clusters n'a été déterminé. Exécutez '_calculer_inertie()' ou spécifiez 'n_clusters_override'.")
 
-        # Appliquer K-means
+        # KMeans
         self.kmeans_model = KMeans(n_clusters=n_clusters_to_use, random_state=42, n_init=10)
         labels = self.kmeans_model.fit_predict(X)
 
-        # Créer une copie du DataFrame PCA et ajouter les labels de cluster
+        # Ajouter les clusters au DataFrame
         self.df_clusters = self.df_pca.copy()
-        # Mapper les labels aux lignes originales de df_pca (y compris celles avec NaN si nécessaire)
-        # Assurez-vous que les indices correspondent entre X et df_pca.
-        # Si df_pca contient des lignes non utilisées par X, ces lignes auront des NaN pour 'cluster'.
         original_indices = self.df_pca[pcs].dropna().index
-        self.df_clusters.loc[original_indices, 'cluster'] = labels + 1 # Clusters numérotés à partir de 1
+        self.df_clusters.loc[original_indices, 'cluster'] = labels + 1  # Label brut (1..k)
 
-        print(f"Clustering terminé. {n_clusters_to_use} clusters créés. ✨")
+        # === Réassignation cohérente des clusters ===
+        centers = self.kmeans_model.cluster_centers_[:, :2]  # sur PC1 et PC2
+        df_centers = pd.DataFrame(centers, columns=['PC1', 'PC2'])
+        df_centers['old_label'] = np.arange(1, len(centers) + 1)
+
+        new_labels_map = {}
+        # Exemple de règles arbitraires pour fixer les labels (tu peux ajuster selon ton projet) :
+        new_labels_map[df_centers.loc[df_centers['PC1'] + df_centers['PC2'] == (df_centers['PC1'] + df_centers['PC2']).min(), 'old_label'].values[0]] = 3  # cluster sain
+        new_labels_map[df_centers.loc[df_centers['PC1'] == df_centers['PC1'].max(), 'old_label'].values[0]] = 4  # extrême
+        new_labels_map[df_centers.loc[df_centers['PC2'] == df_centers['PC2'].max(), 'old_label'].values[0]] = 2  # haut risque
+        remaining_labels = set(df_centers['old_label']) - set(new_labels_map.keys())
+        for l in remaining_labels:
+            new_labels_map[l] = 1  # autres
+
+        # Appliquer la réassignation
+        self.df_clusters['cluster_relabel'] = self.df_clusters['cluster'].map(new_labels_map)
+
+        print("✅ Clustering effectué et labels réassignés pour cohérence entre stats et visualisation.")
+
 
     #------------------------------------------------------------------------------------------------------------------------
 
-    def _visualiser_clusters(self,PC1,PC2):
+    def _visualiser_clusters(self, PC1, PC2):
         """
         Visualise les clusters sur les deux premières composantes principales (PC1 et PC2).
-        Affiche les points de données colorés par cluster et les centres de cluster.
+        Utilise les labels réassignés ('cluster_relabel') pour cohérence avec les stats.
         """
+
         if self.df_clusters is None or self.kmeans_model is None:
             print("Impossible de visualiser : Le clustering n'a pas été effectué. Exécutez '_clustering_final()' d'abord. ❌")
             return
 
         if PC1 not in self.df_clusters.columns or PC2 not in self.df_clusters.columns:
-            print("Impossible de visualiser : Les colonnes 'PC1' et/ou 'PC2' sont manquantes dans le DataFrame des clusters. ⚠️")
+            print(f"Impossible de visualiser : Les colonnes '{PC1}' et/ou '{PC2}' sont manquantes dans le DataFrame des clusters. ⚠️")
             return
 
         print("Visualisation des clusters... 📊")
 
-        # Palette de couleurs fixe pour la cohérence visuelle
+        # Palette de couleurs fixe
         palette_custom = {
-            1: '#1f77b4',   # Bleu (similaire à tab10)
+            1: '#1f77b4',   # Bleu
             2: '#ff7f0e',   # Orange
             3: '#2ca02c',   # Vert
             4: '#d62728',   # Rouge
@@ -1172,40 +1186,42 @@ class ClusteringProcessor:
             13: '#98df8a'   # Vert clair
         }
 
-        # Préparer la palette en fonction des clusters réellement présents
-        clusters_detectes = sorted(self.df_clusters['cluster'].dropna().unique())
+        # Détection des clusters présents
+        clusters_detectes = sorted(self.df_clusters['cluster_relabel'].dropna().unique())
         palette_utilisee = {k: palette_custom.get(k, '#333333') for k in clusters_detectes}
 
+        # Scatterplot
         plt.figure(figsize=(12, 8))
         sns.scatterplot(
-            data=self.df_clusters.dropna(subset=['cluster']),
+            data=self.df_clusters.dropna(subset=['cluster_relabel']),
             x=PC1,
             y=PC2,
-            hue='cluster',
+            hue='cluster_relabel',
             palette=palette_utilisee,
             s=30,
             alpha=0.7,
             legend='full'
         )
 
-        centers = self.kmeans_model.cluster_centers_
-        # plt.scatter(centers[:, 0], centers[:, 1], c='black', s=200, marker='X', label='Centres de Cluster', edgecolor='white', linewidth=2, zorder=5)
-
+        # Annoter les centres (déjà dans le modèle KMeans)
+        centers = self.kmeans_model.cluster_centers_[:, :2]
         for i, center in enumerate(centers):
-            # Annoter les centres avec le label "Cluster X"
             plt.text(center[0], center[1], f'Cluster {i+1}', fontsize=11, fontweight='bold',
-                     ha='center', va='center', color='darkblue', # Couleur du texte
-                     bbox=dict(facecolor='white', alpha=0.7, boxstyle='round,pad=0.4')) # Couleur du fond
+                    ha='center', va='center', color='darkblue',
+                    bbox=dict(facecolor='white', alpha=0.7, boxstyle='round,pad=0.4'))
 
-        plt.title('Clusters vizualisation on the first 2 principal components', fontsize=12)
+        plt.title('Clusters visualisation on the first 2 principal components', fontsize=12)
         plt.xlabel(PC1, fontsize=13)
         plt.ylabel(PC2, fontsize=13)
         plt.legend(title='Cluster', bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0., fontsize=10, title_fontsize=11)
         plt.grid(True, linestyle='--', alpha=0.6)
         plt.tight_layout(rect=[0, 0, 0.98, 1])
         plt.savefig(f"projection_{PC1}_{PC2}.png", dpi=600)
-        print("Graphique des clusters enregistré sous 'projection_{PC1}_{PC2}.png'. 📸")
+        print(f"Graphique des clusters enregistré sous 'projection_{PC1}_{PC2}.png'")
         plt.show()
+
+
+
 
     #------------------------------------------------------------------------------------------------------------------------
 
