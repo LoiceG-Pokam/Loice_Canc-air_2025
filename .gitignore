@@ -6,9 +6,13 @@ figures/
 # Ignore IRIS file 
 data/socioeco/IRIS
 
+#Ignore db files
+Loice_Canc-air_2025/Thumbs.db
+
 # Ignore data files
 data/outputs/
 data/
+loice_pneumodetect/Data/
 
 # Ignore biased ref data 
 data/reference/ref_biaised
