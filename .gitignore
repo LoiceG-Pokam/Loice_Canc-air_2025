@@ -1,0 +1,25 @@
+﻿# Ignore checkpoints
+.ipynb_checkpoints/
+figures/
+Figures_Memoire/
+# Ignore pycache
+__pycache__/
+*.pyc
+# Ignore db files
+Thumbs.db
+# Ignore data files
+data/outputs/
+data/
+loice_pneumodetect/Data/
+# Ignore biased ref data 
+data/reference/ref_biaised
+data/reference/ref_biaised_geocoded
+data/reference/ref_chunked
+data/reference/ref_chunked_geocoded
+# Ignore fichiers resultats
+cancair_stage_ete_2024/Resultats/
+cancair_stage_ete_2024/Airparif/output/
+cancair_stage_ete_2024/Airparif/projets_qgis/
+cancair_stage_ete_2024/zones_geographiques/
+cancair_stage_ete_2024/geocodeur/from_hegp/data/
+cancair_stage_ete_2024/analyse clinique/data/
