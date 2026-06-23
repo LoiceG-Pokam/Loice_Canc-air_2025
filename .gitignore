@@ -1,46 +1,39 @@
-﻿# Ignore checkpoints
-.ipynb_checkpoints/
-figures/
-Figures_Memoire/
-images/
-# Ignore pycache
-__pycache__/
-*.pyc
-# Ignore db files
-Thumbs.db
-# Ignore data files
-data/outputs/
+# ── Données patients & confidentielles (RGPD) ──────────────────────────────
 data/
-loice_pneumodetect/Data/
-# Ignore images
-*.png
-*.PNG
-*.jpg
-*.jpeg
-*.pdf
-*.zip
-# Ignore geo files
-*.shp
-*.shx
-*.dbf
-*.prj
-*.cpg
-*.qmd
-*.qix
-*.qgz
-*.geojson
-*.tif
-*.feather
-*.nc
-# Ignore biased ref data 
-data/reference/ref_biaised
-data/reference/ref_biaised_geocoded
-data/reference/ref_chunked
-data/reference/ref_chunked_geocoded
-# Ignore fichiers resultats
-cancair_stage_ete_2024/Resultats/
-cancair_stage_ete_2024/Airparif/output/
-cancair_stage_ete_2024/Airparif/projets_qgis/
-cancair_stage_ete_2024/zones_geographiques/
-cancair_stage_ete_2024/geocodeur/from_hegp/data/
-cancair_stage_ete_2024/analyse clinique/data/
+excels/
+Data/
+
+# ── Geocodage (BAN volumineuse) ─────────────────────────────────────────────
+geocodage/ban_idf/
+pneumodetect/geocodage/
+
+# ── Données géospatiales patients (RGPD) ────────────────────────────────────
+projet_qgis/
+
+# ── Environnements virtuels ─────────────────────────────────────────────────
+**/venv*/
+**/venv2/
+Notebooks/addok_bd/
+
+# ── Littérature & archives privées ─────────────────────────────────────────
+litterature/
+archives/
+
+# ── Outputs HTML générés ────────────────────────────────────────────────────
+pneumodetect/html/
+
+# ── Tokens & accès ──────────────────────────────────────────────────────────
+token_lungcancair/
+
+# ── Cache Python ────────────────────────────────────────────────────────────
+**/__pycache__/
+*.pyc
+
+# ── Fichiers temporaires ────────────────────────────────────────────────────
+Thumbs.db
+~$*.xlsx
+~$*.docx
+*.tmp
+
+# ── Checkpoints Jupyter ─────────────────────────────────────────────────────
+**/.ipynb_checkpoints/

@@ -45,6 +45,29 @@ COULEURS = {'AB':'#2E86AB','CD':'#52B788','ACBD':'#7B2D8B',
 # SECTION 1 — CHARGEMENT & CONSTRUCTION DE df_final
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
+def detecter_vars_cumul(df_final, cfg=None):
+    """
+    Détecte les colonnes cumul disponibles selon la fenêtre et les polluants retenus.
+    Si cfg fourni, filtre selon cfg['polluants_retenus'].
+    Si 'IPG' est dans polluants_retenus, ajoute 'IPG' à la liste retournée.
+    """
+    polluants = cfg.get('polluants_retenus', ['PM25','PM10','O3']) if cfg else ['PM25','PM10','O3']
+    cols = []
+    for pol in polluants:
+        if pol == 'IPG':
+            # IPG n'a pas de colonne _cumul_ — c'est directement la colonne 'IPG'
+            if 'IPG' in df_final.columns:
+                cols.append('IPG')
+            continue
+        matches = sorted([c for c in df_final.columns
+                   if c.startswith(f'{pol}_cumul_') and 'pct' not in c and 'manq' not in c])
+        if matches:
+            cols.append(matches[0])
+    print(f"Variables cumul détectées ({polluants}) : {cols}")
+    return cols
+
+
 def charger_donnees(chemins):
     """
     Charge les données brutes depuis les chemins définis dans CHEMINS.
@@ -90,13 +113,14 @@ def _calculer_variabilite(serie, nom):
     q75,q25 = np.percentile(s,[75,25])
     return {f'{nom}_std':std,f'{nom}_cv':std/moy if moy>0 else np.nan,f'{nom}_iqr':q75-q25}
 
-def _calculer_exposition_cumulee(serie, nom):
+def _calculer_exposition_cumulee(serie, nom, fenetre_mois=120):
     s = serie[~np.isnan(serie)]
     n_total,n_valides = len(serie),len(s)
     pct = (n_total-n_valides)/n_total*100 if n_total>0 else np.nan
+    suffix = f"{fenetre_mois}m"
     if n_valides == 0:
-        return {f'{nom}_cumul_120m':np.nan,f'{nom}_cumul_pct_manq':np.nan}
-    return {f'{nom}_cumul_120m':np.nansum(serie),f'{nom}_cumul_pct_manq':pct}
+        return {f"{nom}_cumul_{suffix}":np.nan, f"{nom}_cumul_pct_manq":np.nan}
+    return {f"{nom}_cumul_{suffix}":np.nansum(serie), f"{nom}_cumul_pct_manq":pct}
 
 def _calculer_pct_seuils(serie, nom, seuils):
     s = serie[~np.isnan(serie)]
@@ -141,10 +165,20 @@ def _calculer_IPG(df_expo):
 def calculer_variables_air(data, df_clinique, cfg):
     """
     Calcule toutes les variables d'exposition pour chaque patient.
-    cfg doit contenir 'seuils_pct' : {'PM25':[...],'PM10':[...],'O3':[...]}
-    Retourne df_air.
+    cfg doit contenir :
+        'seuils_pct'       : {'PM25':[...],'PM10':[...],'O3':[...]}
+        'fenetre_ans'      : années rétrospectives (défaut=10)
+        'polluants_calcul' : polluants à calculer (défaut=tous les 4)
+                             Ex: ['PM25','O3'] pour ne calculer que ces deux
+    Colonnes créées selon la fenêtre :
+        fenetre_ans=3  → PM25_cumul_36m
+        fenetre_ans=10 → PM25_cumul_120m (défaut)
     """
-    seuils_pct = cfg.get('seuils_pct', {'PM25':[5,10,15,25,35],'PM10':[35,45,50,60,80,90],'O3':[100,120,180]})
+    seuils_pct       = cfg.get('seuils_pct', {'PM25':[5,10,15,25,35],'PM10':[35,45,50,60,80,90],'O3':[100,120,180]})
+    fenetre_ans      = cfg.get('fenetre_ans', 10)
+    fenetre_mois     = int(fenetre_ans * 12)
+    polluants_calcul = cfg.get('polluants_calcul', POLLUANTS_DEFAUT)
+    print(f"Fenêtre : {fenetre_ans} an(s) ({fenetre_mois} mois) | Polluants calculés : {polluants_calcul}")
 
     patients_communs = set(data['pseudo_provisoire'].unique()) & set(df_clinique['pseudo_provisoire'].unique())
     print(f"Patients communs : {len(patients_communs)}")
@@ -156,20 +190,20 @@ def calculer_variables_air(data, df_clinique, cfg):
     resultats, exclus = [], []
     for pseudo in tqdm(df_clin['pseudo_provisoire'].unique(), desc='Patients'):
         date_diag  = pd.Timestamp(df_clin.loc[df_clin['pseudo_provisoire']==pseudo,'date_diagnostic'].iloc[0])
-        date_debut = date_diag - relativedelta(months=FENETRE_MAX_MOIS)
+        date_debut = date_diag - relativedelta(months=fenetre_mois)
         if pseudo not in groupes_poll.groups:
             exclus.append(pseudo); continue
         df_pat = df_poll.loc[groupes_poll.groups[pseudo]]
         df_pat = df_pat[(df_pat['date']>=date_debut)&(df_pat['date']<date_diag)].copy()
         if len(df_pat) == 0:
             exclus.append(pseudo); continue
-        m = {'pseudo_provisoire':pseudo,'date_diagnostic':date_diag}
-        for pol in POLLUANTS_DEFAUT:
+        m = {'pseudo_provisoire':pseudo,'date_diagnostic':date_diag,'fenetre_mois':fenetre_mois}
+        for pol in polluants_calcul:
             if pol not in df_pat.columns: continue
             serie = df_pat[pol].values
             m.update(_calculer_tendance_centrale(serie,pol))
             m.update(_calculer_variabilite(serie,pol))
-            m.update(_calculer_exposition_cumulee(serie,pol))
+            m.update(_calculer_exposition_cumulee(serie,pol,fenetre_mois))
             m.update(_calculer_tendance_mm_mk(df_pat,pol))
             if pol in seuils_pct:
                 m.update(_calculer_pct_seuils(serie,pol,seuils_pct[pol]))
@@ -177,7 +211,9 @@ def calculer_variables_air(data, df_clinique, cfg):
 
     df_air = _calculer_IPG(pd.DataFrame(resultats))
     if exclus: print(f"⚠️  {len(exclus)} patients exclus")
+    cols_cumul = [c for c in df_air.columns if '_cumul_' in c and 'pct' not in c and 'manq' not in c]
     print(f"✅ df_air : {len(df_air)} patients × {len(df_air.columns)} variables")
+    print(f"   Fenêtre : {fenetre_ans} an(s) | Colonnes cumul : {cols_cumul[:6]}")
     return df_air
 
 
@@ -305,9 +341,422 @@ def ajouter_icpe(df_air, gdf_patients, cfg):
     return df_air
 
 
+def ajouter_radon(df_air, df_clinique, chemin_radon, cfg=None):
+    """
+    Fusionne le score radon géologique sur pseudo_provisoire.
+
+    Le CSV attendu (ex: patients_radon_score_final.csv) doit contenir :
+        - pseudo_provisoire : identifiant patient
+        - radon_score       : score continu 0-100 basé sur la géologie
+        - NOTATION          : code formation géologique (optionnel)
+        - DESCR             : description formation géologique (optionnel)
+
+    cfg peut contenir :
+        'radon_var'      : nom exact de la colonne score radon
+                           (défaut : auto-détection sur 'radon' dans le nom)
+        'geo_notation'   : nom de la colonne formation géologique
+                           (défaut : 'NOTATION' si présente)
+
+    Variables créées dans df_air :
+        radon_score    : score géologique continu (0–100)
+        radon_bin      : binaire — 1 si radon_score > médiane de la cohorte
+        radon_quartile : Q1 à Q4 selon la distribution de la cohorte
+                         (utile pour l'analyse dose-réponse)
+        formation_geo  : code de la formation géologique (si disponible)
+
+    Note scientifique :
+        Ce score est calculé à partir des teneurs en uranium des formations
+        géologiques du Bassin parisien. Les valeurs sont plus faibles que dans
+        les zones granitiques (Bretagne, Massif Central), ce qui est cohérent
+        avec un rôle de confondant MINEUR dans cette cohorte.
+    """
+    df_radon = pd.read_csv(chemin_radon, dtype=str, keep_default_na=False)
+    df_radon['pseudo_provisoire'] = df_radon['pseudo_provisoire'].astype(int)
+
+    # ── Détection de la colonne score radon ───────────────────────────────
+    radon_var = cfg.get('radon_var') if cfg else None
+    if radon_var is None:
+        candidates = [c for c in df_radon.columns
+                      if 'radon' in c.lower() and c != 'pseudo_provisoire']
+        radon_var = candidates[0] if candidates else None
+    if radon_var is None:
+        print("⚠️  Colonne radon non trouvée dans le CSV — vérifier le fichier.")
+        return df_air
+
+    # ── Détection de la colonne formation géologique ──────────────────────
+    # Priorité : cfg['geo_notation'], puis 'NOTATION', puis 'DESCR'
+    geo_var = cfg.get('geo_notation') if cfg else None
+    if geo_var is None:
+        for candidate in ['NOTATION', 'notation', 'formation', 'DESCR']:
+            if candidate in df_radon.columns:
+                geo_var = candidate
+                break
+
+    # ── Sélection et renommage des colonnes utiles ─────────────────────────
+    cols_merge = ['pseudo_provisoire', radon_var]
+    if geo_var:
+        cols_merge.append(geo_var)
+
+    df_r = df_radon[cols_merge].copy().rename(
+        columns={radon_var: 'radon_score', geo_var: 'formation_geo'} if geo_var
+        else {radon_var: 'radon_score'}
+    )
+    df_r['radon_score'] = pd.to_numeric(df_r['radon_score'], errors='coerce')
+
+    # ── Variables dérivées ─────────────────────────────────────────────────
+    med = df_r['radon_score'].median()
+    df_r['radon_bin'] = (df_r['radon_score'] > med).astype(float)
+
+    # Quartiles : Q1 = faible exposition, Q4 = forte exposition
+    # duplicates='drop' gère les ex-aequo fréquents dans ce type de score
+    df_r['radon_quartile'] = pd.qcut(
+        df_r['radon_score'], q=4,
+        labels=['Q1_faible', 'Q2', 'Q3', 'Q4_élevé'],
+        duplicates='drop'
+    ).astype(str)
+
+    # ── Fusion sur df_air ──────────────────────────────────────────────────
+    df_air = df_air.merge(df_r, on='pseudo_provisoire', how='left')
+
+    n_ok  = df_air['radon_score'].notna().sum()
+    n_tot = len(df_air)
+    print(f"✅ Radon — score géologique continu (0-100)")
+    print(f"   Disponible : {n_ok}/{n_tot} patients ({n_ok/n_tot*100:.1f}%)")
+    print(f"   Médiane cohorte = {df_air['radon_score'].median():.1f} | "
+          f"Moyenne = {df_air['radon_score'].mean():.1f} | "
+          f"Max = {df_air['radon_score'].max():.1f}")
+    print(f"   radon_bin (> médiane) : {int(df_air['radon_bin'].sum())} patients exposés")
+    print(f"   Distribution quartiles :")
+    for q, n in df_air['radon_quartile'].value_counts(dropna=False).sort_index().items():
+        print(f"      {q} : {n} patients")
+    if geo_var:
+        print(f"   Formations géologiques distinctes : {df_air['formation_geo'].nunique()}")
+    print("⚠️  Note : cohorte en Bassin parisien → radon attendu comme confondant MINEUR")
+    return df_air
+
+
+def explorer_distribution_radon(df):
+    """
+    Visualise la distribution du score radon géologique par groupe.
+
+    Produit 3 figures :
+      1. Boxplots du score radon continu (0-100) par groupe (A/B, C/D, A+C/B+D)
+         + test Mann-Whitney. C'est la figure principale car radon_score est continu.
+      2. Distribution des quartiles de radon par groupe — barplot en % + Chi²
+         (permet de voir si certains groupes sont sur-représentés en Q4)
+      3. Top formations géologiques par groupe (si formation_geo disponible)
+    """
+    if 'radon_score' not in df.columns:
+        print("⚠️  Colonne 'radon_score' absente — lancer ajouter_radon() d'abord.")
+        return
+
+    groupes = [
+        ('groupe_AB',    'Groupe A',   'Groupe B',   '#2E86AB', '#A8DADC', 'A vs B — Mutations NF'),
+        ('groupe_CD',    'Groupe C',   'Groupe D',   '#52B788', '#E76F51', 'C vs D — Non-fumeurs vs Fumeurs'),
+        ('groupe_AC_BD', 'Groupe A+C', 'Groupe B+D', '#7B2D8B', '#BBBBBB', 'A+C vs B+D'),
+    ]
+
+    # ── Figure 1 : Boxplots score radon continu ───────────────────────────
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle('Score radon géologique (0–100) par groupe', fontsize=13, fontweight='bold')
+
+    for ax, (col_g, g1, g2, c1, c2, titre) in zip(axes, groupes):
+        df_sub = df[df[col_g].isin([g1, g2])].dropna(subset=['radon_score'])
+        if len(df_sub) == 0:
+            ax.set_visible(False); continue
+        s1 = df_sub.loc[df_sub[col_g] == g1, 'radon_score']
+        s2 = df_sub.loc[df_sub[col_g] == g2, 'radon_score']
+        _, p = mannwhitneyu(s1, s2, alternative='two-sided')
+        p_txt  = '<0.001' if p < 0.001 else f'{p:.3f}'
+        couleur_sig = 'red' if p < 0.05 else 'gray'
+        palette = {g1: c1, g2: c2}
+        sns.boxplot(data=df_sub, x=col_g, y='radon_score',
+                    palette=palette, order=[g1, g2], ax=ax, width=0.5)
+        ax.set_title(f'{titre}\np = {p_txt}', fontsize=10, fontweight='bold',
+                     color=couleur_sig)
+        ax.set_xlabel('')
+        ax.set_ylabel('Score radon (0–100)')
+        # Annotation médianes
+        for g, c in [(g1, c1), (g2, c2)]:
+            med = df_sub.loc[df_sub[col_g] == g, 'radon_score'].median()
+            ax.text(0.5, med, f' Méd={med:.1f}', va='center', fontsize=8, color='black')
+        ax.grid(True, axis='y', alpha=0.3)
+        ax.spines[['top', 'right']].set_visible(False)
+
+    plt.tight_layout()
+    plt.show()
+
+    # ── Figure 2 : Distribution quartiles par groupe ─────────────────────
+    if 'radon_quartile' in df.columns:
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+        fig.suptitle('Distribution quartiles radon par groupe (%)',
+                     fontsize=13, fontweight='bold')
+        ordre_q = sorted(df['radon_quartile'].dropna().unique())
+
+        for ax, (col_g, g1, g2, c1, c2, titre) in zip(axes, groupes):
+            df_sub = df[df[col_g].isin([g1, g2])].dropna(subset=['radon_quartile'])
+            if len(df_sub) == 0:
+                ax.set_visible(False); continue
+
+            tab = pd.crosstab(df_sub['radon_quartile'], df_sub[col_g])
+            try:
+                from scipy.stats import chi2_contingency
+                _, p, _, _ = chi2_contingency(tab.values)
+                p_txt = '<0.001' if p < 0.001 else f'{p:.3f}'
+            except Exception:
+                p_txt = 'NA'
+
+            tab_pct = tab.div(tab.sum(axis=0), axis=1) * 100
+            x     = np.arange(len(ordre_q))
+            width = 0.35
+            vals_g1 = [tab_pct.loc[q, g1] if q in tab_pct.index
+                       and g1 in tab_pct.columns else 0 for q in ordre_q]
+            vals_g2 = [tab_pct.loc[q, g2] if q in tab_pct.index
+                       and g2 in tab_pct.columns else 0 for q in ordre_q]
+
+            ax.bar(x - width/2, vals_g1, width, color=c1, label=g1, edgecolor='white')
+            ax.bar(x + width/2, vals_g2, width, color=c2, label=g2, edgecolor='white')
+            ax.set_xticks(x)
+            ax.set_xticklabels(ordre_q, fontsize=8, rotation=15)
+            ax.set_ylabel('% du groupe')
+            ax.set_title(f'{titre}\nChi² p = {p_txt}', fontsize=10, fontweight='bold',
+                         color='red' if p_txt not in ['NA'] and
+                         (p_txt == '<0.001' or (p_txt != 'NA' and float(p_txt) < 0.05))
+                         else 'gray')
+            ax.legend(fontsize=9)
+            ax.grid(True, axis='y', alpha=0.3)
+            ax.spines[['top', 'right']].set_visible(False)
+
+        plt.tight_layout()
+        plt.show()
+
+    # ── Figure 3 : Top formations géologiques ────────────────────────────
+    if 'formation_geo' in df.columns:
+        fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+        fig.suptitle('Top 8 formations géologiques par groupe (%)',
+                     fontsize=13, fontweight='bold')
+        for ax, (col_g, g1, g2, c1, c2, titre) in zip(axes, groupes):
+            df_sub = df[df[col_g].isin([g1, g2])].dropna(subset=['formation_geo'])
+            if len(df_sub) == 0:
+                ax.set_visible(False); continue
+            tab = pd.crosstab(df_sub['formation_geo'], df_sub[col_g])
+            # Garder les 8 formations les plus fréquentes
+            top8 = tab.sum(axis=1).nlargest(8).index
+            tab_pct = tab.loc[top8].div(tab.sum(axis=0), axis=1) * 100
+            try:
+                from scipy.stats import chi2_contingency
+                _, p, _, _ = chi2_contingency(tab.values)
+                p_txt = '<0.001' if p < 0.001 else f'{p:.3f}'
+            except Exception:
+                p_txt = 'NA'
+            tab_pct.plot(kind='barh', ax=ax, color=[c1, c2], edgecolor='white', width=0.6)
+            ax.set_title(f'{titre}\nChi² p = {p_txt}', fontsize=10, fontweight='bold')
+            ax.set_xlabel('% du groupe')
+            ax.tick_params(axis='y', labelsize=7)
+            ax.grid(True, axis='x', alpha=0.3)
+            ax.spines[['top', 'right']].set_visible(False)
+        plt.tight_layout()
+        plt.show()
+
+
+def analyse_sensibilite_radon(df, cfg):
+    """
+    Analyse de sensibilité : l'effet des polluants atmosphériques persiste-t-il
+    après ajustement pour le radon ?
+
+    Pour chaque groupe (A/B, C/D, A+C/B+D), lance deux modèles :
+      - Modèle 1 (sans radon) : polluants + covariables cliniques
+      - Modèle 2 (avec radon) : polluants + covariables cliniques + radon_categorie
+
+    Compare les OR des polluants entre les deux modèles et calcule
+    le % de changement de l'OR → si faible (< 10%), l'effet pollution
+    est robuste au radon.
+
+    Retourne un dict avec les deux tableaux et la comparaison.
+    """
+    if 'radon_score' not in df.columns:
+        print("⚠️  'radon_score' absent — lancer ajouter_radon() d'abord.")
+        return None
+
+    GROUPES = [
+        ('AB',   'groupe_AB',    'Groupe A',   'Groupe B',   True,  '#2E86AB', 'A vs B — Mutations NF'),
+        ('CD',   'groupe_CD',    'Groupe C',   'Groupe D',   False, '#52B788', 'C vs D — Non-fumeurs vs Fumeurs'),
+        ('ACBD', 'groupe_AC_BD', 'Groupe A+C', 'Groupe B+D', False, '#7B2D8B', 'A+C vs B+D'),
+    ]
+
+    resultats = {}
+
+    print("\n" + "█"*65)
+    print("ANALYSE DE SENSIBILITÉ — AJUSTEMENT RADON")
+    print("█"*65)
+    print("Question : Les effets des polluants persistent-ils après ajustement pour le radon ?")
+    print()
+
+    for key, col_g, g1, g2, paquet, couleur, titre in GROUPES:
+        print(f"\n{'='*60}\n{titre}\n{'='*60}")
+
+        d = df[df[col_g].isin([g1, g2])].copy()
+        d['outcome'] = (d[col_g] == g1).astype(int)
+
+        # Variables du modèle de base (sans radon)
+        vars_base = _vars_modele(cfg, inclure_paquet=paquet)
+        vars_base = [v for v in vars_base if v in d.columns]
+
+        # Variables du modèle avec radon — dédoublonner pour éviter les
+        # colonnes dupliquées qui causent "truth value of a Series is ambiguous"
+        vars_radon = list(dict.fromkeys(vars_base + ['radon_score']))
+        vars_radon = [v for v in vars_radon if v in d.columns]
+
+        # ── Modèle 1 : sans radon ──────────────────────────────────────────
+        d1 = d[vars_base + ['outcome']].dropna()
+        if len(d1) < 30 or d1['outcome'].sum() < 5:
+            print(f"⚠️  Effectif insuffisant"); continue
+
+        scaler = StandardScaler()
+        # Reconstruction explicite du DataFrame standardisé pour éviter les
+        # colonnes dupliquées dues à l'assignation en slice pandas
+        arr1 = scaler.fit_transform(d1[vars_base])
+        d1_std = pd.DataFrame(arr1, columns=vars_base, index=d1.index)
+        d1_std['outcome'] = d1['outcome'].values
+        vars_ok1 = [v for v in vars_base if float(d1_std[v].std()) > 1e-8]
+        X1 = sm.add_constant(d1_std[vars_ok1]); y1 = d1_std['outcome']
+        try:
+            mod1 = sm.Logit(y1, X1).fit(disp=False)
+            tab1 = _tableau_OR(mod1, vars_ok1)
+        except Exception as e:
+            print(f"  ⚠️  Modèle sans radon échoué : {e}"); continue
+
+        # ── Modèle 2 : avec radon ──────────────────────────────────────────
+        d2 = d[vars_radon + ['outcome']].dropna()
+        if len(d2) < 30 or d2['outcome'].sum() < 5:
+            print(f"⚠️  Effectif insuffisant après dropna avec radon"); continue
+
+        scaler2 = StandardScaler()
+        arr2 = scaler2.fit_transform(d2[vars_radon])
+        d2_std = pd.DataFrame(arr2, columns=vars_radon, index=d2.index)
+        d2_std['outcome'] = d2['outcome'].values
+        vars_ok2 = [v for v in vars_radon if float(d2_std[v].std()) > 1e-8]
+        X2 = sm.add_constant(d2_std[vars_ok2]); y2 = d2_std['outcome']
+        try:
+            mod2 = sm.Logit(y2, X2).fit(disp=False)
+            tab2 = _tableau_OR(mod2, vars_ok2)
+        except Exception as e:
+            print(f"  ⚠️  Modèle avec radon échoué : {e}"); continue
+
+        # ── Comparaison OR ─────────────────────────────────────────────────
+        auc1 = roc_auc_score(y1, mod1.predict(X1))
+        auc2 = roc_auc_score(y2, mod2.predict(X2))
+
+        print(f"\n  AUC sans radon  = {auc1:.3f}")
+        print(f"  AUC avec radon  = {auc2:.3f}  (Δ = {auc2-auc1:+.3f})")
+
+        # Variables d'exposition (polluants) présentes dans les deux modèles
+        vars_exp = [v for v in vars_ok1 if any(pol in v for pol in ['PM25','PM10','NO2','O3','IPG'])]
+
+        rows_comp = []
+        for var in vars_exp:
+            if var not in tab1.set_index('Variable').index: continue
+            if var not in tab2.set_index('Variable').index: continue
+            or1 = tab1.set_index('Variable').loc[var, 'OR']
+            or2 = tab2.set_index('Variable').loc[var, 'OR']
+            p1  = tab1.set_index('Variable').loc[var, 'p-value']
+            p2  = tab2.set_index('Variable').loc[var, 'p-value']
+            delta_pct = (or2 - or1) / or1 * 100 if or1 != 0 else float('nan')
+            robuste = '✅ Robuste' if abs(delta_pct) < 10 else ('⚠️ Δ modéré' if abs(delta_pct) < 20 else '❌ Confondant fort')
+            rows_comp.append({
+                'Variable'       : var,
+                'OR sans radon'  : round(or1, 3),
+                'p sans radon'   : p1,
+                'OR avec radon'  : round(or2, 3),
+                'p avec radon'   : p2,
+                'Δ OR (%)'       : round(delta_pct, 1),
+                'Robustesse'     : robuste,
+            })
+
+        # OR du radon lui-même
+        if 'radon_score' in tab2.set_index('Variable').index:
+            r_row = tab2.set_index('Variable').loc['radon_score']
+            print(f"\n  Effet radon : OR = {r_row['OR']:.3f} | p = {r_row['p-value']} {r_row['Sig']}")
+
+        df_comp = pd.DataFrame(rows_comp)
+        print(f"\n  ── Comparaison OR polluants (sans vs avec radon) ──")
+        try:
+            from IPython.display import display; display(df_comp)
+        except Exception:
+            print(df_comp.to_string(index=False))
+
+        # Visualisation forest plot comparatif
+        if len(df_comp) > 0:
+            fig, ax = plt.subplots(figsize=(10, max(4, len(df_comp)*0.8 + 1)))
+            ax.axvline(x=1, color='black', linestyle='--', lw=1.2)
+            for i, row in df_comp.reset_index().iterrows():
+                # OR sans radon (gris)
+                or_s = tab1.set_index('Variable').loc[row['Variable'], 'OR']
+                ic_lo_s = tab1.set_index('Variable').loc[row['Variable'], 'IC 95% inf']
+                ic_hi_s = tab1.set_index('Variable').loc[row['Variable'], 'IC 95% sup']
+                ax.plot([ic_lo_s, ic_hi_s], [i + 0.15, i + 0.15],
+                        color='#AAAAAA', lw=2, label='Sans radon' if i == 0 else '')
+                ax.plot(or_s, i + 0.15, 's', color='#AAAAAA', markersize=8)
+                # OR avec radon (couleur)
+                or_r = tab2.set_index('Variable').loc[row['Variable'], 'OR']
+                ic_lo_r = tab2.set_index('Variable').loc[row['Variable'], 'IC 95% inf']
+                ic_hi_r = tab2.set_index('Variable').loc[row['Variable'], 'IC 95% sup']
+                ax.plot([ic_lo_r, ic_hi_r], [i - 0.15, i - 0.15],
+                        color=couleur, lw=2, label='Avec radon' if i == 0 else '')
+                ax.plot(or_r, i - 0.15, 'o', color=couleur, markersize=8)
+                # Annotation Δ
+                delta_str = f"Δ={row['Δ OR (%)']:+.1f}%"
+                ax.text(max(ic_hi_s, ic_hi_r) * 1.05, i,
+                        delta_str, va='center', fontsize=8,
+                        color='green' if abs(row['Δ OR (%)']) < 10 else 'red')
+
+            ax.set_yticks(range(len(df_comp)))
+            ax.set_yticklabels(df_comp['Variable'].tolist(), fontsize=9)
+            ax.set_xscale('log')
+            ax.set_xlabel('Odds Ratio (IC 95%)')
+            ax.set_title(f'Sensibilité au radon — {titre}\n□ Sans radon  ○ Avec radon',
+                         fontweight='bold')
+            handles = [
+                mpatches.Patch(color='#AAAAAA', label='Sans radon'),
+                mpatches.Patch(color=couleur,   label='Avec radon'),
+            ]
+            ax.legend(handles=handles, fontsize=9)
+            ax.grid(True, axis='x', alpha=0.3)
+            plt.tight_layout()
+            plt.show()
+
+        # Résumé verbal
+        n_robuste = (df_comp['Robustesse'] == '✅ Robuste').sum()
+        n_total   = len(df_comp)
+        print(f"\n  ── Résumé ──")
+        print(f"  {n_robuste}/{n_total} variables d'exposition robustes après ajustement radon (|ΔOR| < 10%)")
+        if n_robuste == n_total:
+            print("  ✅ L'effet des polluants atmosphériques est ROBUSTE après ajustement pour le radon.")
+        elif n_robuste > n_total / 2:
+            print("  ⚠️  L'effet des polluants est PARTIELLEMENT robuste — le radon est un confondant modéré.")
+        else:
+            print("  ❌ L'effet des polluants change fortement avec le radon — confondant fort.")
+
+        resultats[key] = {
+            'modele_sans_radon': mod1,
+            'modele_avec_radon': mod2,
+            'tableau_sans_radon': tab1,
+            'tableau_avec_radon': tab2,
+            'comparaison': df_comp,
+            'auc_sans': auc1,
+            'auc_avec': auc2,
+        }
+
+    return resultats
+
+
 def construire_df_final(data, df_clinique, df_air):
     """Fusionne df_air avec df_clinique → df_final avec groupes."""
     df_final = df_clinique.merge(df_air, on=['pseudo_provisoire','date_diagnostic'], how='inner')
+
+    # Colonnes cumul créées selon la fenêtre et les polluants
+    cols_cumul = [c for c in df_final.columns if '_cumul_' in c and 'pct' not in c and 'manq' not in c]
+    print(f"\n── Colonnes cumul dans df_final : {cols_cumul}")
 
     # Groupes
     mask_A = pd.Series(False, index=df_final.index)
@@ -359,22 +808,47 @@ def _filtrer(df, cfg):
 
 
 def _vars_modele(cfg, inclure_paquet=True):
-    """Construit la liste des variables sans doublons depuis CFG."""
+    """
+    Construit la liste des variables du modèle depuis CFG.
+    Filtre automatiquement selon cfg['polluants_retenus'].
+    """
+    polluants = cfg.get('polluants_retenus', ['PM25','PM10','NO2','O3'])
     seen, vars_mod = set(), []
     def add(v):
         if v not in seen:
             seen.add(v); vars_mod.append(v)
 
-    for v in cfg.get('cumul',[]): add(v)
-    for v in cfg.get('tendance',[]): add(v)
-    for s in cfg.get('pct_pm25',[]): add(f'PM25_pct_sup{s}')
-    for s in cfg.get('pct_pm10',[]): add(f'PM10_pct_sup{s}')
-    for s in cfg.get('pct_o3',[]): add(f'O3_pct_sup{s}')
+    # Cumul — garder uniquement les polluants retenus
+    for v in cfg.get('cumul',[]):
+        pol = v.split('_')[0]  # ex: 'PM25' depuis 'PM25_cumul_36m'
+        if pol in polluants: add(v)
+
+    # Tendance — garder uniquement les polluants retenus
+    for v in cfg.get('tendance',[]):
+        pol = v.split('_')[0]
+        if pol in polluants: add(v)
+
+    # % du temps — garder uniquement les polluants retenus
+    if 'PM25' in polluants:
+        for s in cfg.get('pct_pm25',[]): add(f'PM25_pct_sup{s}')
+    if 'PM10' in polluants:
+        for s in cfg.get('pct_pm10',[]): add(f'PM10_pct_sup{s}')
+    if 'NO2' in polluants:
+        for s in cfg.get('pct_no2',[]): add(f'NO2_pct_sup{s}')
+    if 'O3' in polluants:
+        for s in cfg.get('pct_o3',[]): add(f'O3_pct_sup{s}')
+
+    # Variables cliniques et contextuelles (indépendantes du polluant)
     if cfg.get('inclure_age',True): add('age_diagnostic')
     if inclure_paquet and cfg.get('inclure_paquet',True): add('paquet_annee')
     if cfg.get('inclure_sexe',True): add('sexe_bin')
     if cfg.get('inclure_edi',True): add('quintileEDI2021')
     if cfg.get('inclure_trafic',True): add('indice_trafic')
+    # Radon — covariable contextuelle (ajustement confondant)
+    if cfg.get('inclure_radon', False): add('radon_score')
+    # IPG — Indice de Pollution Global (composite z-score PM25+PM10+NO2+O3)
+    # S'active dès que inclure_ipg=True, indépendamment de polluants_retenus
+    if cfg.get('inclure_ipg', False): add('IPG')
     for v in cfg.get('icpe',[]): add(v)
     return vars_mod
 
@@ -385,8 +859,10 @@ def _vars_modele(cfg, inclure_paquet=True):
 
 def explorer_distribution_polluants(df):
     """Boxplots des cumuls par groupe pour les 4 polluants."""
-    pols = [(f'{p}_cumul_120m', f'{p} (μg/m³·j)') for p in ['PM25','PM10','NO2','O3']
-            if f'{p}_cumul_120m' in df.columns]
+    pols = []
+    for p in ['PM25','PM10','NO2','O3']:
+        matches = [c for c in df.columns if c.startswith(f'{p}_cumul_') and 'pct' not in c and 'manq' not in c]
+        if matches: pols.append((matches[0], f'{p} (μg/m³·j)'))
     groupes = [
         ('groupe_AB','Groupe A','Groupe B','#2E86AB','#A8DADC','A vs B — Mutations NF'),
         ('groupe_CD','Groupe C','Groupe D','#52B788','#E76F51','C vs D — Non-fumeurs vs Fumeurs'),
@@ -510,7 +986,11 @@ def explorer_tendances(df):
 
 def chercher_seuils_critiques(df, cfg):
     """Cherche les seuils critiques d'exposition pour les 3 groupes."""
-    seuils_test = cfg.get('seuils_pct', {'PM25':[5,10,15,25,35],'PM10':[35,45,50,60,80,90],'O3':[100,120,180]})
+    # Filtrer les seuils selon polluants_retenus
+    all_seuils = cfg.get('seuils_pct', {'PM25':[5,10,15,25,35],'PM10':[35,45,50,60,80,90],'O3':[100,120,180]})
+    polluants  = cfg.get('polluants_retenus', list(all_seuils.keys()))
+    seuils_test = {pol: seuils for pol,seuils in all_seuils.items() if pol in polluants}
+    print(f"Polluants testés : {list(seuils_test.keys())}")
     GROUPES = [
         ('groupe_AB','Groupe A','Groupe B','A vs B — Mutations NF'),
         ('groupe_CD','Groupe C','Groupe D','C vs D — Non-fumeurs vs Fumeurs'),
@@ -571,12 +1051,117 @@ def chercher_seuils_critiques(df, cfg):
             ax_auc.set_title(f'{titre}\n|AUC-0.5|',fontsize=10,fontweight='bold')
             ax_auc.set_xlabel(f'Seuil {pol_label}'); ax_auc.set_ylabel('|AUC-0.5|'); ax_auc.grid(True,axis='y',alpha=0.3)
         plt.tight_layout(); plt.show()
-    return df_res
+
+    # ── Correction Benjamini-Hochberg (FDR) ──────────────────────────────────
+    from statsmodels.stats.multitest import multipletests
+    if len(df_res) > 0:
+        _, pvals_corr, _, _ = multipletests(df_res['p-value'].values, method='fdr_bh')
+        df_res['p_adj_BH'] = pvals_corr
+        df_res['p_adj_fmt'] = ['<0.001' if p<0.001 else f'{p:.3f}' for p in pvals_corr]
+        df_res['Sig_BH']   = ['✅' if p<0.05 else '—' for p in pvals_corr]
+        sig_raw = (df_res['Sig']=='✅').sum()
+        sig_bh  = (df_res['Sig_BH']=='✅').sum()
+        print(f"\n{'='*65}\nCORRECTION BENJAMINI-HOCHBERG\n{'='*65}")
+        print(f"  Significatifs avant BH : {sig_raw} / {len(df_res)}")
+        print(f"  Significatifs après BH : {sig_bh} / {len(df_res)}")
+        if sig_bh < sig_raw:
+            print(f"  ⚠️  {sig_raw-sig_bh} seuil(s) perdent leur significativité")
+
+    # ── Seuils retenus après BH ───────────────────────────────────────────────
+    seuils_retenus = {pol:[] for pol in seuils_test}
+    for pol in seuils_test:
+        df_pol = df_res[df_res['Polluant']==pol]
+        col_sig = 'Sig_BH' if 'Sig_BH' in df_res.columns else 'Sig'
+        df_sig = df_pol[df_pol[col_sig]=='✅']
+
+        # ── RÈGLE : 1 seul seuil par polluant = le plus significatif ──────────
+        if len(df_sig) > 0:
+            # Garder uniquement le seuil avec p-value minimale
+            best_sig = df_sig.loc[df_sig['p-value'].idxmin()]
+            seuils_sig = [int(best_sig['Seuil'])]
+            if len(df_sig) > 1:
+                exclus = [int(s) for s in df_sig['Seuil'].tolist() if int(s) != seuils_sig[0]]
+                print(f"  ℹ️  {pol} : {len(df_sig)} seuils sig. → retenu >{seuils_sig[0]} "
+                      f"(p={best_sig['p-value']:.3f}) | exclus : {exclus}")
+        else:
+            best = df_pol.loc[df_pol['p-value'].idxmin()] if len(df_pol)>0 else None
+            if best is not None:
+                seuils_sig=[int(best['Seuil'])]
+                print(f"  ⚠️  {pol} : fallback meilleur brut (>{int(best['Seuil'])})")
+            else:
+                seuils_sig=[]
+        seuils_retenus[pol] = seuils_sig
+    print("\n── Seuils retenus après BH ──")
+    for pol,seuils in seuils_retenus.items():
+        print(f"  {pol:<8} : {seuils if seuils else '— aucun'}")
+    return df_res, seuils_retenus
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 5 — CORRÉLATION & FAMD
 # ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _firth_regression(X, y, max_iter=100, tol=1e-6):
+    """Régression logistique de Firth. Corrige biais EPV faible."""
+    from scipy import stats
+    X=np.array(X,dtype=float); y=np.array(y,dtype=float)
+    n,p=X.shape; beta=np.zeros(p)
+    for _ in range(max_iter):
+        pi=np.clip(1/(1+np.exp(-X@beta)),1e-10,1-1e-10)
+        W=np.diag(pi*(1-pi)); XtWX=X.T@W@X
+        try: H_inv=np.linalg.inv(XtWX)
+        except: H_inv=np.linalg.pinv(XtWX)
+        try:
+            Wh=np.diag(np.sqrt(pi*(1-pi)))
+            h=np.diag(Wh@X@H_inv@X.T@Wh)
+        except: h=np.zeros(n)
+        U_star=X.T@(y-pi+h*(0.5-pi))
+        delta=H_inv@U_star; beta_new=beta+delta
+        if np.max(np.abs(delta))<tol: beta=beta_new; break
+        beta=beta_new
+    pi=np.clip(1/(1+np.exp(-X@beta)),1e-10,1-1e-10)
+    XtWX=X.T@np.diag(pi*(1-pi))@X
+    try: var_cov=np.linalg.inv(XtWX)
+    except: var_cov=np.linalg.pinv(XtWX)
+    return beta, var_cov
+
+def _run_regression_firth(d, vars_ok, titre, couleur):
+    """Lance Firth sur DataFrame préparé."""
+    from scipy import stats
+    scaler=StandardScaler(); d_std=d.copy()
+    d_std[vars_ok]=scaler.fit_transform(d[vars_ok])
+    vars_ok=[v for v in vars_ok if d_std[v].std()>1e-8]
+    X_arr=np.column_stack([np.ones(len(d_std))]+[d_std[v].values for v in vars_ok])
+    y_arr=d_std['outcome'].values
+    try: beta,var_cov=_firth_regression(X_arr,y_arr)
+    except Exception as e: print(f"⚠️  Firth échoué : {e}"); return None,None,None
+    se=np.sqrt(np.diag(var_cov)); z=beta/(se+1e-10); pval=2*(1-stats.norm.cdf(np.abs(z)))
+    rows=[{'Variable':nom,'OR':round(float(np.exp(b)),3),
+           'IC 95% inf':round(float(np.exp(b-1.96*s)),3),'IC 95% sup':round(float(np.exp(b+1.96*s)),3),
+           'p-value':'<0.001' if p<0.001 else f'{p:.3f}','p_num':float(p),
+           'Sig':'✅' if p<0.05 else '—','Méthode':'Firth'}
+          for nom,b,s,p in zip(vars_ok,beta[1:],se[1:],pval[1:])]
+    tab=pd.DataFrame(rows)
+    try:
+        from IPython.display import display; display(tab.drop(columns=['p_num','Méthode']))
+    except: print(tab.drop(columns=['p_num','Méthode']).to_string(index=False))
+    pi_hat=1/(1+np.exp(-X_arr@beta)); auc=roc_auc_score(y_arr,pi_hat)
+    fig,ax=plt.subplots(figsize=(8,max(4,len(vars_ok)*0.4)))
+    ax.axvline(x=1,color='black',linestyle='--',lw=1.2)
+    for i,row in tab.iterrows():
+        c=couleur if row['Sig']=='✅' else '#AAAAAA'
+        ax.plot([row['IC 95% inf'],row['IC 95% sup']],[i,i],color=c,lw=2)
+        ax.plot(row['OR'],i,'o',color=c,markersize=8)
+        if row['Sig']=='✅':
+            ax.text(row['IC 95% sup']*1.05,i,f"p={row['p-value']}",va='center',fontsize=8,color=couleur,fontweight='bold')
+    ax.set_yticks(range(len(tab))); ax.set_yticklabels(tab['Variable'].tolist(),fontsize=9)
+    ax.set_xscale('log'); ax.set_xlabel('OR — Firth (IC 95%)')
+    ax.set_title(f'Forest plot Firth — {titre}\nAUC={auc:.3f}',fontweight='bold')
+    ax.grid(True,axis='x',alpha=0.3); plt.tight_layout(); plt.show()
+    print(f"AUC={auc:.3f} [Firth]")
+    return None, tab, auc
+
 
 def heatmap_correlation(df, vars_grouped):
     """vars_grouped : dict {label: [colonnes]}"""
@@ -817,17 +1402,21 @@ def _run_regression(df, vars_modele, col_g, g1, g2, titre, couleur, inclure_paqu
     if not vars_ok:
         print(f"⚠️  {titre} : toutes les variables sont constantes après filtrage."); return None,None,None
 
+    # ── Retirer variables constantes ────────────────────────────────────────
+    vars_ok=[v for v in vars_ok if d_std[v].std()>1e-8]
+    if not vars_ok: print(f"⚠️  {titre} : toutes variables constantes"); return None,None,None
+
+    # ── Déséquilibre des classes ──────────────────────────────────────────
+    n_pos=int(d['outcome'].sum()); n_neg=len(d)-n_pos
+    if n_neg/max(1,n_pos)>3:
+        print(f"  ⚠️  Déséquilibre détecté (ratio={n_neg/n_pos:.1f}) — logistique standard")
+
     X=sm.add_constant(d_std[vars_ok]); y=d_std['outcome']
-    try:
-        modele=sm.Logit(y,X).fit(disp=False)
-    except Exception as e:
-        # Tentative avec méthode alternative (bfgs plus robuste)
-        try:
-            modele=sm.Logit(y,X).fit(disp=False, method='bfgs', maxiter=200)
+    try: modele=sm.Logit(y,X).fit(disp=False)
+    except:
+        try: modele=sm.Logit(y,X).fit(disp=False,method='bfgs',maxiter=200)
         except Exception as e2:
-            print(f"⚠️  {titre} : échec de la régression ({e2})")
-            print("   → Cause probable : quasi-séparation parfaite ou trop peu de cas positifs.")
-            return None,None,None
+            print(f"⚠️  {titre} : échec ({e2})"); return None,None,None
     tab=_tableau_OR(modele,vars_ok)
     try:
         from IPython.display import display; display(tab.drop(columns=['p_num']))
@@ -903,8 +1492,21 @@ def analyses_mutations(df, cfg, mutations=None):
         titre=f'Mutation {mut} (n+={n_pos}, EPV={epv:.1f})'
         print(f"\n{'='*60}\n{titre}\n{'='*60}")
         scaler=StandardScaler(); d_std=d.copy(); d_std[vars_ok]=scaler.fit_transform(d[vars_ok])
+        vars_ok=[v for v in vars_ok if d_std[v].std()>1e-8]
+        n_neg_m=len(d)-d['outcome'].sum()
+        use_firth=(epv<10) or (n_neg_m/max(1,d['outcome'].sum())>5)
+        if use_firth:
+            print(f"  → Régression de Firth activée (EPV={epv:.1f})")
+            _,tab,auc=_run_regression_firth(d,vars_ok,f'Mutation {mut} (Firth)',COULEURS.get(mut,'#2E86AB'))
+            if tab is None: res[mut]=None; continue
+            res[mut]={'modele':None,'tableau':tab,'auc':auc,'n_pos':n_pos,'epv':epv,'methode':'Firth'}
+            continue
         X=sm.add_constant(d_std[vars_ok]); y=d_std['outcome']
-        modele=sm.Logit(y,X).fit(disp=False); tab=_tableau_OR(modele,vars_ok)
+        try: modele=sm.Logit(y,X).fit(disp=False)
+        except:
+            try: modele=sm.Logit(y,X).fit(disp=False,method='bfgs',maxiter=200)
+            except Exception as e2: print(f"⚠️  {mut}: {e2}"); res[mut]=None; continue
+        tab=_tableau_OR(modele,vars_ok)
         try:
             from IPython.display import display; display(tab.drop(columns=['p_num']))
         except: print(tab.drop(columns=['p_num']).to_string(index=False))
@@ -1108,6 +1710,1425 @@ def analyse_pct_temps(df, cfg):
         plt.tight_layout(); plt.show()
     else: print("\n— Aucune variable % significative.")
     return df_res
+
+
+
+def lasso_selection(df, cfg, groupe='AB', alpha_values=None):
+    """
+    Sélection de variables par régression pénalisée L1 (Lasso).
+    Filtre automatiquement selon cfg['polluants_retenus'].
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import cross_val_score
+
+    if alpha_values is None:
+        alpha_values = np.logspace(-3, 1, 30)
+
+    col_map={'AB':('groupe_AB','Groupe A','Groupe B'),
+             'CD':('groupe_CD','Groupe C','Groupe D'),
+             'ACBD':('groupe_AC_BD','Groupe A+C','Groupe B+D')}
+    col_g,g1,g2=col_map[groupe]; couleur=COULEURS.get(groupe,'#2E86AB')
+
+    # Variables d'exposition filtrées selon polluants_retenus
+    polluants=cfg.get('polluants_retenus',['PM25','PM10','NO2','O3'])
+    vars_exp=[]
+    for v in cfg.get('cumul',[]):
+        if v.split('_')[0] in polluants: vars_exp.append(v)
+    for v in cfg.get('tendance',[]):
+        if v.split('_')[0] in polluants: vars_exp.append(v)
+    if 'PM25' in polluants: vars_exp+=[f'PM25_pct_sup{s}' for s in cfg.get('pct_pm25',[])]
+    if 'PM10' in polluants: vars_exp+=[f'PM10_pct_sup{s}' for s in cfg.get('pct_pm10',[])]
+    if 'NO2'  in polluants: vars_exp+=[f'NO2_pct_sup{s}'  for s in cfg.get('pct_no2',[])]
+    if 'O3'   in polluants: vars_exp+=[f'O3_pct_sup{s}'   for s in cfg.get('pct_o3',[])]
+    vars_exp+=cfg.get('icpe',[])
+
+    d=_filtrer(df,cfg)
+    d=d[d[col_g].isin([g1,g2])].copy(); d['outcome']=(d[col_g]==g1).astype(int)
+    vars_ok=[v for v in vars_exp if v in d.columns]
+    d=d[vars_ok+['outcome']].dropna()
+    if len(d)<50: print("⚠️  Effectif insuffisant pour Lasso."); return None
+
+    scaler=StandardScaler(); X=scaler.fit_transform(d[vars_ok]); y=d['outcome'].values
+    n_pos=y.sum(); cw='balanced' if (len(y)-n_pos)/max(1,n_pos)>3 else None
+
+    print(f"\n{'='*60}\nLASSO L1 — {groupe} | Polluants : {polluants}\n{'='*60}")
+    print(f"N={len(d)} | n+={n_pos} | Variables : {len(vars_ok)}")
+
+    resultats_lasso=[]; auc_cv=[]
+    for alpha in alpha_values:
+        C=1.0/(alpha*len(d))
+        clf=LogisticRegression(penalty='l1',C=C,solver='liblinear',class_weight=cw,max_iter=500,random_state=42)
+        clf.fit(X,y)
+        auc_cv.append(cross_val_score(clf,X,y,cv=5,scoring='roc_auc').mean())
+        for var,coef in zip(vars_ok,clf.coef_[0]):
+            resultats_lasso.append({'alpha':alpha,'Variable':var,'Coef':coef,'Selectionne':coef!=0})
+
+    df_lasso=pd.DataFrame(resultats_lasso)
+    best_idx=np.argmax(auc_cv); best_alpha=alpha_values[best_idx]; best_auc=auc_cv[best_idx]
+    vars_select=df_lasso[(df_lasso['alpha']==best_alpha)&(df_lasso['Selectionne'])]['Variable'].tolist()
+
+    print(f"\nMeilleur alpha={best_alpha:.4f} | AUC CV={best_auc:.3f}")
+    print(f"Variables sélectionnées ({len(vars_select)}) :")
+    for v in vars_select:
+        coef=df_lasso[(df_lasso['alpha']==best_alpha)&(df_lasso['Variable']==v)]['Coef'].values[0]
+        print(f"  ✅ {v:<35} coef={coef:+.4f}")
+    if not vars_select: print("  — Aucune variable sélectionnée")
+
+    fig,axes=plt.subplots(1,2,figsize=(14,5))
+    fig.suptitle(f'Lasso L1 — {groupe} | Polluants : {polluants}',fontsize=13,fontweight='bold')
+    ax=axes[0]
+    for var in vars_ok:
+        d_var=df_lasso[df_lasso['Variable']==var].sort_values('alpha')
+        sel=var in vars_select
+        ax.plot(np.log10(d_var['alpha']),d_var['Coef'],
+                lw=2 if sel else 0.8,alpha=1 if sel else 0.25,
+                label=var if sel else None,color=couleur if sel else '#CCCCCC')
+    ax.axhline(y=0,color='black',linestyle='--',lw=1)
+    ax.axvline(x=np.log10(best_alpha),color='red',linestyle='--',lw=1.5,label='λ optimal')
+    ax.set_xlabel('log10(alpha)'); ax.set_ylabel('Coefficient Lasso')
+    ax.set_title('Chemin de régularisation')
+    if vars_select: ax.legend(fontsize=8,loc='upper right')
+    ax.grid(True,alpha=0.3)
+    axes[1].plot(np.log10(alpha_values),auc_cv,color=couleur,lw=2)
+    axes[1].axvline(x=np.log10(best_alpha),color='red',linestyle='--',lw=1.5,
+                    label=f'λ optimal (AUC={best_auc:.3f})')
+    axes[1].set_xlabel('log10(alpha)'); axes[1].set_ylabel('AUC (CV 5 folds)')
+    axes[1].set_title('AUC CV selon lambda'); axes[1].legend(fontsize=9); axes[1].grid(True,alpha=0.3)
+    plt.tight_layout(); plt.show()
+    return {'df_lasso':df_lasso,'vars_selectionnees':vars_select,'best_alpha':best_alpha,'auc_cv':best_auc}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NOUVELLES FONCTIONS — Ajoutées à lungcancair_analyses.py
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import copy
+
+
+def lasso_selection_exposition(df, cfg, groupe='AB', alpha_values=None):
+    """
+    Lasso L1 pour sélectionner les variables d'EXPOSITION uniquement.
+    Les covariables cliniques (tabac, sexe, âge, EDI, trafic) sont
+    FORCÉES dans le modèle — seules les variables d'exposition sont pénalisées.
+
+    Logique :
+      1. Modèle avec covariables cliniques forcées + exposition pénalisée L1
+      2. Lambda optimal par validation croisée
+      3. Variables sélectionnées = exposition avec coef non nul
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import cross_val_score
+
+    if alpha_values is None:
+        alpha_values = np.logspace(-3, 1, 30)
+
+    col_map = {'AB':   ('groupe_AB',    'Groupe A',   'Groupe B'),
+               'CD':   ('groupe_CD',    'Groupe C',   'Groupe D'),
+               'ACBD': ('groupe_AC_BD', 'Groupe A+C', 'Groupe B+D')}
+    col_g, g1, g2 = col_map[groupe]
+    couleur = COULEURS.get(groupe, '#2E86AB')
+    paquet_in = {'AB': True, 'CD': False, 'ACBD': False}[groupe]
+
+    # Variables d'exposition (pénalisées par Lasso)
+    polluants = cfg.get('polluants_retenus', ['PM25','O3'])
+    vars_expo = []
+    for pol in polluants:
+        cols_cum = [c for c in df.columns
+                    if c.startswith(pol+'_cumul_') and 'pct' not in c and 'manq' not in c]
+        if cols_cum: vars_expo.append(cols_cum[0])
+        if pol+'_mm365_sen_pente' in df.columns: vars_expo.append(pol+'_mm365_sen_pente')
+        key_map = {'PM25':'pct_pm25','PM10':'pct_pm10','O3':'pct_o3','NO2':'pct_no2'}
+        for s in cfg.get(key_map.get(pol,''), []):
+            col_pct = pol+'_pct_sup'+str(s)
+            if col_pct in df.columns: vars_expo.append(col_pct)
+    for col in cfg.get('icpe', []):
+        if col in df.columns: vars_expo.append(col)
+    # IPG — ajouté à l'exposition si inclure_ipg=True et IPG disponible
+    if cfg.get('inclure_ipg', False) and 'IPG' in df.columns:
+        vars_expo.append('IPG')
+    vars_expo = list(dict.fromkeys(vars_expo))
+
+    # Covariables cliniques (forcées — non pénalisées)
+    vars_clin = []
+    if cfg.get('inclure_age', True)    and 'age_diagnostic'  in df.columns: vars_clin.append('age_diagnostic')
+    if paquet_in and cfg.get('inclure_paquet', True) and 'paquet_annee' in df.columns: vars_clin.append('paquet_annee')
+    if cfg.get('inclure_sexe', True)   and 'sexe_bin'        in df.columns: vars_clin.append('sexe_bin')
+    if cfg.get('inclure_edi', True)    and 'quintileEDI2021' in df.columns: vars_clin.append('quintileEDI2021')
+    if cfg.get('inclure_trafic', True) and 'indice_trafic'   in df.columns: vars_clin.append('indice_trafic')
+
+    d = _filtrer(df, cfg)
+    d = d[d[col_g].isin([g1, g2])].copy()
+    d['outcome'] = (d[col_g] == g1).astype(int)
+    vars_ok_clin = [v for v in vars_clin if v in d.columns]
+    vars_ok_expo = [v for v in vars_expo if v in d.columns]
+    all_ok = vars_ok_clin + vars_ok_expo
+    d = d[all_ok + ['outcome']].dropna()
+    if len(d) < 50: print('Effectif insuffisant.'); return None
+
+    n_pos = int(d['outcome'].sum())
+    n_neg = len(d) - n_pos
+    cw = 'balanced' if n_neg / max(1, n_pos) > 3 else None
+
+    sep = '='*65
+    print(f'\n{sep}')
+    print(f'LASSO — EXPOSITION — {groupe}')
+    print(f'{sep}')
+    print(f'N={len(d)} | n+={n_pos} | Polluants : {polluants}')
+    print(f'Covariables forcées ({len(vars_ok_clin)}) : {vars_ok_clin}')
+    print(f'Variables exposition ({len(vars_ok_expo)}) : {vars_ok_expo}')
+
+    scaler = StandardScaler()
+    X_all  = scaler.fit_transform(d[all_ok])
+    X_clin = X_all[:, :len(vars_ok_clin)]
+    X_expo = X_all[:, len(vars_ok_clin):]
+    y      = d['outcome'].values
+
+    resultats_lasso = []
+    auc_cv = []
+
+    for alpha in alpha_values:
+        C_expo = 1.0 / (alpha * len(d))
+        X_concat = np.column_stack([X_clin, X_expo]) if X_expo.shape[1] > 0 else X_clin
+        clf = LogisticRegression(penalty='l1', C=C_expo, solver='liblinear',
+                                  class_weight=cw, max_iter=500, random_state=42)
+        try:
+            clf.fit(X_concat, y)
+            cv = cross_val_score(clf, X_concat, y, cv=5, scoring='roc_auc')
+            auc_cv.append(cv.mean())
+            coefs_expo = clf.coef_[0][len(vars_ok_clin):]
+            for var, coef in zip(vars_ok_expo, coefs_expo):
+                resultats_lasso.append({'alpha':alpha,'Variable':var,'Coef':coef,'Selectionne':coef!=0})
+        except Exception:
+            auc_cv.append(0.5)
+
+    if not resultats_lasso: print('Aucun résultat.'); return None
+
+    df_lasso  = pd.DataFrame(resultats_lasso)
+    best_idx  = np.argmax(auc_cv)
+    best_alpha= alpha_values[best_idx]
+    best_auc  = auc_cv[best_idx]
+    vars_select = df_lasso[(df_lasso['alpha']==best_alpha)&(df_lasso['Selectionne'])]['Variable'].tolist()
+
+    print(f'\nMeilleur alpha={best_alpha:.4f} | AUC CV={best_auc:.3f}')
+    print(f'Variables exposition sélectionnées ({len(vars_select)}) :')
+    for v in vars_select:
+        coef = df_lasso[(df_lasso['alpha']==best_alpha)&(df_lasso['Variable']==v)]['Coef'].values[0]
+        print(f'  {v:<40} coef={coef:+.4f}')
+    if not vars_select:
+        print('  Aucune variable exposition sélectionnée')
+        print('  (covariables cliniques suffisent)')
+
+    # Visualisation
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle(f'Lasso exposition — {groupe}', fontsize=13, fontweight='bold')
+    ax = axes[0]
+    for var in vars_ok_expo:
+        d_var = df_lasso[df_lasso['Variable']==var].sort_values('alpha')
+        sel   = var in vars_select
+        ax.plot(np.log10(d_var['alpha']), d_var['Coef'],
+                lw=2 if sel else 0.8, alpha=1 if sel else 0.25,
+                label=var if sel else None,
+                color=couleur if sel else '#CCCCCC')
+    ax.axhline(y=0,color='black',linestyle='--',lw=1)
+    ax.axvline(x=np.log10(best_alpha),color='red',linestyle='--',lw=1.5,label='lambda opt')
+    ax.set_xlabel('log10(alpha)'); ax.set_ylabel('Coef Lasso (exposition)')
+    ax.set_title('Chemin régularisation — Exposition')
+    if vars_select: ax.legend(fontsize=8)
+    ax.grid(True,alpha=0.3)
+    axes[1].plot(np.log10(alpha_values),auc_cv,color=couleur,lw=2)
+    axes[1].axvline(x=np.log10(best_alpha),color='red',linestyle='--',lw=1.5,
+                    label=f'lambda opt (AUC={best_auc:.3f})')
+    axes[1].set_xlabel('log10(alpha)'); axes[1].set_ylabel('AUC CV')
+    axes[1].set_title('AUC CV selon lambda'); axes[1].legend(fontsize=9)
+    axes[1].grid(True,alpha=0.3)
+    plt.tight_layout(); plt.show()
+
+    return {'df_lasso':df_lasso,'vars_selectionnees':vars_select,
+            'vars_cliniques_forcees':vars_ok_clin,
+            'best_alpha':best_alpha,'auc_cv':best_auc}
+
+def analyser_collinearite_icpe(df_final, cfg, seuil_r=0.85, seuil_vif=5.0):
+    """
+    Analyse la collinéarité entre les variables ICPE et nettoie CFG['icpe'].
+
+    Problème courant : nb_ICPE_total_3km ≈ nb_ICPE_NS_3km (corrélation > 0.99)
+    → le modèle devient instable (IC aberrants [0.005 ; 258])
+
+    Étape 1 — Matrice de corrélation : toutes les paires d'ICPE
+    Étape 2 — VIF (Variance Inflation Factor) : mesure le "gonflement"
+              de la variance dû à la multicolinéarité
+              VIF > 5 = problématique | VIF > 10 = très problématique
+    Étape 3 — Suppression automatique des redondants selon une règle de priorité :
+              distance ICPE > count ICPE spécifique > count ICPE total
+              (le total est toujours la somme des spécifiques → redondant)
+
+    Met à jour CFG['icpe'] directement et retourne la liste nettoyée.
+
+    Paramètres :
+        seuil_r   : seuil de corrélation au-delà duquel une variable est redondante (défaut 0.85)
+        seuil_vif : seuil VIF au-delà duquel une variable est problématique (défaut 5.0)
+    """
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+    vars_icpe = cfg.get('icpe', [])
+    vars_dispo = [v for v in vars_icpe if v in df_final.columns]
+    if len(vars_dispo) < 2:
+        print("⚠️  Moins de 2 variables ICPE disponibles — rien à analyser.")
+        return vars_dispo
+
+    df_sub = df_final[vars_dispo].dropna()
+
+    print("█"*60)
+    print("COLLINÉARITÉ ICPE — ANALYSE ET NETTOYAGE AUTOMATIQUE")
+    print("█"*60)
+    print(f"Variables initiales ({len(vars_dispo)}) : {vars_dispo}")
+    print(f"Seuil corrélation : |r| > {seuil_r} → redondant")
+    print(f"Seuil VIF         : VIF > {seuil_vif} → problématique\n")
+
+    # ── Étape 1 : Matrice de corrélation ─────────────────────────────────
+    corr = df_sub.corr().round(3)
+
+    print("── Matrice de corrélation ──")
+    try:
+        from IPython.display import display
+        # Colorer les cases selon intensité
+        styled = corr.style.background_gradient(cmap='RdYlGn_r', vmin=-1, vmax=1).format("{:.2f}")
+        display(styled)
+    except Exception:
+        print(corr.to_string())
+
+    # Paires problématiques
+    paires_redondantes = []
+    for i in range(len(vars_dispo)):
+        for j in range(i+1, len(vars_dispo)):
+            r = abs(corr.iloc[i, j])
+            if r >= seuil_r:
+                paires_redondantes.append((vars_dispo[i], vars_dispo[j], round(r, 3)))
+
+    if paires_redondantes:
+        print(f"\n⚠️  Paires très corrélées (|r| ≥ {seuil_r}) :")
+        for v1, v2, r in sorted(paires_redondantes, key=lambda x: -x[2]):
+            print(f"   {v1:35s} ↔  {v2:35s}  r = {r:.3f}")
+    else:
+        print(f"\n✅ Aucune paire corrélée au-dessus de {seuil_r}")
+
+    # ── Étape 2 : VIF ────────────────────────────────────────────────────
+    print("\n── VIF (Variance Inflation Factor) ──")
+    try:
+        from sklearn.preprocessing import StandardScaler
+        X_scaled = StandardScaler().fit_transform(df_sub)
+        vif_vals = {
+            vars_dispo[i]: round(variance_inflation_factor(X_scaled, i), 2)
+            for i in range(len(vars_dispo))
+        }
+        for v, vif in sorted(vif_vals.items(), key=lambda x: -x[1]):
+            flag = '❌ TRÈS FORT' if vif > 10 else ('⚠️  Fort' if vif > seuil_vif else '✅ OK')
+            print(f"   {v:40s}  VIF = {vif:7.2f}  {flag}")
+    except Exception as e:
+        print(f"   ⚠️  VIF non calculable : {e}")
+        vif_vals = {}
+
+    # ── Étape 3 : Nettoyage automatique ──────────────────────────────────
+    # Règle de priorité : plus spécifique > plus général
+    # distance (SH/SB) > count spécifique (SH, SB, NS) > count total
+    def _priorite(v):
+        if v.startswith('dist_'):       return 0   # distances = plus informatives
+        if 'SH' in v:                   return 1   # Seveso HH
+        if 'SB' in v:                   return 2   # Seveso SB
+        if 'NS' in v:                   return 3   # Non-Seveso
+        if 'total' in v:                return 4   # total = somme des autres → redondant
+        return 5
+
+    a_garder = list(vars_dispo)     # part de la liste complète
+    supprimees = []
+    raisons    = {}
+
+    # Passe 1 : supprimer par corrélation
+    for v1, v2, r in sorted(paires_redondantes, key=lambda x: -x[2]):
+        if v1 not in a_garder or v2 not in a_garder:
+            continue
+        # Garder celle avec la plus haute priorité (indice le plus bas)
+        if _priorite(v1) <= _priorite(v2):
+            victime, survivant = v2, v1
+        else:
+            victime, survivant = v1, v2
+        a_garder.remove(victime)
+        supprimees.append(victime)
+        raisons[victime] = f"r={r:.3f} avec {survivant} → garder {survivant} (plus spécifique)"
+
+    # Passe 2 : supprimer par VIF élevé (si encore dans la liste)
+    if vif_vals:
+        for v, vif in sorted(vif_vals.items(), key=lambda x: -x[1]):
+            if vif > seuil_vif and v in a_garder and v not in supprimees:
+                # Ne supprimer par VIF que si pas déjà nettoyé par corrélation
+                # et seulement si c'est une variable "totale" ou redondante
+                if _priorite(v) >= 4:
+                    a_garder.remove(v)
+                    supprimees.append(v)
+                    raisons[v] = f"VIF={vif:.1f} > {seuil_vif} (variable agrégée redondante)"
+
+    # ── Résumé ───────────────────────────────────────────────────────────
+    print(f"\n── Décision de nettoyage ──")
+    if supprimees:
+        for v in supprimees:
+            print(f"   ❌ SUPPRIMÉE : {v}")
+            print(f"      Raison    : {raisons[v]}")
+        print(f"\n   ✅ Variables conservées ({len(a_garder)}) : {a_garder}")
+    else:
+        print("   ✅ Aucune variable supprimée — pas de colinéarité critique.")
+
+    # ── Visualisation : une seule heatmap de corrélation, triangulaire ───
+    if len(vars_dispo) >= 2:
+        fig, ax = plt.subplots(figsize=(max(6, len(vars_dispo)*1.2),
+                                        max(5, len(vars_dispo)*1.0)))
+        mask = np.zeros_like(corr, dtype=bool)
+        mask[np.triu_indices_from(mask)] = True
+        labels = [v.replace('nb_ICPE_','nb_').replace('dist_ICPE_','dist_')
+                  for v in vars_dispo]
+        sns.heatmap(corr, ax=ax, annot=True, fmt='.2f', cmap='RdYlGn_r',
+                    vmin=-1, vmax=1, linewidths=0.5, mask=mask,
+                    xticklabels=labels, yticklabels=labels)
+        # Surligner en rouge les cases problématiques
+        for i in range(len(vars_dispo)):
+            for j in range(i):
+                if abs(corr.iloc[i, j]) >= seuil_r:
+                    ax.add_patch(plt.Rectangle((j, i), 1, 1, fill=False,
+                                               edgecolor='red', lw=2.5))
+        ax.set_title('Corrélations ICPE (cases rouges = redondantes → supprimées)',
+                     fontweight='bold')
+        plt.tight_layout()
+        plt.show()
+
+    # ── Mise à jour CFG ───────────────────────────────────────────────────
+    cfg['icpe'] = a_garder
+    print(f"\n✅ CFG[\"icpe\"] mis à jour → {a_garder}")
+    print("   Les analyses suivantes (Partie 7, 7b, 8, 9…) utiliseront cette liste nettoyée.")
+    return a_garder
+
+
+def detecter_vars_icpe(df_final, cfg):
+    """Détecte automatiquement les colonnes ICPE selon rayons_icpe_m et icpe_types."""
+    rayons = cfg.get('rayons_icpe_m', [3000])
+    types  = cfg.get('icpe_types', {})
+    cols   = []
+    for t in ['SH', 'SB']:
+        col = f'dist_ICPE_{t}_m'
+        if col in df_final.columns: cols.append(col)
+    for rayon in rayons:
+        lbl = f'{rayon//1000}km' if rayon % 1000 == 0 else f'{rayon}m'
+        col_tot = f'nb_ICPE_total_{lbl}'
+        if col_tot in df_final.columns: cols.append(col_tot)
+        for type_label in types:
+            col_t = f'nb_ICPE_{type_label}_{lbl}'
+            if col_t in df_final.columns: cols.append(col_t)
+    cols = list(dict.fromkeys(cols))
+    print(f"Variables ICPE détectées : {cols}")
+    return cols
+
+
+def analyses_monovariees(df, cfg, groupes=None):
+    """
+    Teste chaque variable séparément (OR brut, AUC, p-value) pour chaque groupe.
+    Variables continues  → Mann-Whitney + régression logistique univariée
+    Variables catégorielles → Chi² / Fisher
+    """
+    from scipy.stats import mannwhitneyu, chi2_contingency, fisher_exact
+    from sklearn.preprocessing import StandardScaler as SS
+
+    if groupes is None:
+        groupes = [
+            ('groupe_AB',    'Groupe A',   'Groupe B',   'A vs B — Mutations NF',          '#2E86AB'),
+            ('groupe_CD',    'Groupe C',   'Groupe D',   'C vs D — Non-fumeurs vs Fumeurs', '#52B788'),
+            ('groupe_AC_BD', 'Groupe A+C', 'Groupe B+D', 'A+C vs B+D',                     '#7B2D8B'),
+        ]
+
+    pol_ret = cfg.get('polluants_retenus', ['PM25', 'PM10', 'NO2', 'O3'])
+
+    def _classer_vars(df, cfg):
+        cont, cat = [], []
+        for pol in pol_ret:
+            cols_cum = [c for c in df.columns
+                        if c.startswith(pol+'_cumul_') and 'pct' not in c and 'manq' not in c]
+            if cols_cum: cont.append(cols_cum[0])
+            col_pente = pol+'_mm365_sen_pente'
+            if col_pente in df.columns: cont.append(col_pente)
+            key_map = {'PM25':'pct_pm25','PM10':'pct_pm10','NO2':'pct_no2','O3':'pct_o3'}
+            key = key_map.get(pol, 'pct_'+pol.lower())
+            seuils_r = cfg.get(key, [])
+            if seuils_r:
+                col_pct = pol+'_pct_sup'+str(seuils_r[0])
+                if col_pct in df.columns: cont.append(col_pct)
+            col_mk = pol+'_mm365_mk_tendance'
+            if col_mk in df.columns: cat.append(col_mk)
+        for v in ['age_diagnostic','paquet_annee','quintileEDI2021','indice_trafic','dist_RN_m']:
+            if v in df.columns: cont.append(v)
+        if 'sexe_bin' in df.columns: cont.append('sexe_bin')
+        if 'histologie_groupe' in df.columns: cat.append('histologie_groupe')
+        for col in cfg.get('icpe', []):
+            if col in df.columns: cont.append(col)
+        # IPG — inclus si présent dans df et si inclure_ipg=True
+        if cfg.get('inclure_ipg', False) and 'IPG' in df.columns:
+            cont.append('IPG')
+        # Radon — inclus si présent dans df
+        if 'radon_score' in df.columns:
+            cont.append('radon_score')
+        cont = list(dict.fromkeys(cont))
+        cat  = list(dict.fromkeys(cat))
+        return cont, cat
+
+    vars_cont, vars_cat = _classer_vars(df, cfg)
+    sep = '='*65
+    print(f"Variables testées : {len(vars_cont)} continues + {len(vars_cat)} catégorielles")
+    print(f"  Exposition  : cumul + tendance + 1 pct par polluant ({pol_ret})")
+    print(f"  Clinique    : age, tabac, sexe, EDI, trafic")
+    print(f"  Industriel  : {cfg.get('icpe',[])}") 
+    resultats_dict = {}
+
+    for col_g, g1, g2, titre, couleur in groupes:
+        print(f"\n{'='*65}\n{titre}\n{'='*65}")
+        df_sub = df[df[col_g].isin([g1, g2])].copy()
+        df_sub['outcome'] = (df_sub[col_g] == g1).astype(int)
+        rows = []
+
+        for var in vars_cont:
+            if var not in df_sub.columns: continue
+            s = df_sub[[var,'outcome']].dropna()
+            if len(s) < 20: continue
+            s1 = s.loc[s['outcome']==1, var].values
+            s2 = s.loc[s['outcome']==0, var].values
+            if len(s1) < 5 or len(s2) < 5: continue
+            try:
+                _, p = mannwhitneyu(s1, s2, alternative='two-sided')
+                auc  = roc_auc_score(s['outcome'], s[var])
+                X_u  = sm.add_constant(SS().fit_transform(s[[var]]))
+                try:
+                    mod  = sm.Logit(s['outcome'], X_u).fit(disp=False)
+                    OR   = float(np.exp(mod.params[1]))
+                    ic_lo= float(np.exp(mod.conf_int().iloc[1,0]))
+                    ic_hi= float(np.exp(mod.conf_int().iloc[1,1]))
+                except Exception:
+                    OR, ic_lo, ic_hi = float('nan'), float('nan'), float('nan')
+                rows.append({'Variable':var,'Type':'Continue','Test':'Mann-Whitney',
+                    'Médiane g1':round(float(np.median(s1)),3),
+                    'Médiane g2':round(float(np.median(s2)),3),
+                    'OR_brut':round(OR,3) if not np.isnan(OR) else 'NA',
+                    'IC_inf':round(ic_lo,3) if not np.isnan(ic_lo) else 'NA',
+                    'IC_sup':round(ic_hi,3) if not np.isnan(ic_hi) else 'NA',
+                    'AUC':round(auc,3),'p_num':p,
+                    'p-value':'<0.001' if p<0.001 else f'{p:.3f}',
+                    'Sig':'✅' if p<0.05 else '—'})
+            except Exception: continue
+
+        for var in vars_cat:
+            if var not in df_sub.columns: continue
+            s = df_sub[[var,'outcome']].dropna()
+            if len(s) < 20: continue
+            try:
+                tab = pd.crosstab(s[var], s['outcome'])
+                if tab.shape[0] < 2 or tab.shape[1] < 2: continue
+                if tab.values.min() < 5 or tab.shape == (2,2):
+                    _, p = fisher_exact(tab.values[:2,:2])
+                else:
+                    _, p, _, _ = chi2_contingency(tab)
+                auc = roc_auc_score(s['outcome'], pd.Categorical(s[var]).codes)
+                rows.append({'Variable':var,'Type':'Catégorielle','Test':'Chi²/Fisher',
+                    'Médiane g1':'—','Médiane g2':'—','OR_brut':'—','IC_inf':'—','IC_sup':'—',
+                    'AUC':round(auc,3),'p_num':p,
+                    'p-value':'<0.001' if p<0.001 else f'{p:.3f}',
+                    'Sig':'✅' if p<0.05 else '—'})
+            except Exception: continue
+
+        df_res = pd.DataFrame(rows).sort_values('p_num')
+        try:
+            from IPython.display import display; display(df_res.drop(columns=['p_num']))
+        except Exception:
+            print(df_res.drop(columns=['p_num']).to_string(index=False))
+        resultats_dict[titre] = df_res
+
+        # Forest plot + AUC barplot
+        df_c = df_res[df_res['Type']=='Continue'].copy().reset_index(drop=True)
+        if len(df_c) > 0:
+            fig, axes = plt.subplots(1, 2, figsize=(16, max(5, len(df_c)*0.35+1)))
+            fig.suptitle(f'Analyses monovariées — {titre}', fontsize=13, fontweight='bold')
+            ax = axes[0]
+            ax.axvline(x=1, color='black', linestyle='--', lw=1.2)
+            for i, row in df_c.iterrows():
+                try:
+                    OR   = float(row['OR_brut']); lo = float(row['IC_inf']); hi = float(row['IC_sup'])
+                    c_   = couleur if row['Sig']=='✅' else '#AAAAAA'
+                    ax.plot([lo,hi],[i,i],color=c_,lw=2); ax.plot(OR,i,'o',color=c_,markersize=8)
+                    if row['Sig']=='✅':
+                        ax.text(hi*1.05,i,f"p={row['p-value']}",va='center',fontsize=7.5,
+                                color=couleur,fontweight='bold')
+                except Exception: continue
+            ax.set_yticks(range(len(df_c))); ax.set_yticklabels(df_c['Variable'].tolist(),fontsize=8)
+            ax.set_xscale('log'); ax.set_xlabel('OR brut (IC 95%)'); ax.set_title('Forest plot — OR bruts')
+            ax.grid(True,axis='x',alpha=0.3)
+            ax2 = axes[1]
+            colors_ = [couleur if r=='✅' else '#DDDDDD' for r in df_c['Sig']]
+            bars_ = ax2.barh(range(len(df_c)),df_c['AUC'].values,color=colors_,edgecolor='white')
+            ax2.axvline(x=0.5,color='red',linestyle='--',lw=1.2,alpha=0.7)
+            for i,(bar,auc_v) in enumerate(zip(bars_,df_c['AUC'].values)):
+                ax2.text(bar.get_width()+0.002,i,f'{auc_v:.3f}',va='center',fontsize=7.5,fontweight='bold')
+            ax2.set_yticks(range(len(df_c))); ax2.set_yticklabels(df_c['Variable'].tolist(),fontsize=8)
+            ax2.set_xlabel('AUC univariée'); ax2.set_title('AUC univariée par variable')
+            ax2.grid(True,axis='x',alpha=0.3)
+            plt.tight_layout(); plt.show()
+
+    return resultats_dict
+
+
+def trouver_seuil_concentration_optimal(data, df_clinique, df_final, cfg, groupes=None):
+    """
+    Partie 11e — Trouver C* sur les concentrations journalières brutes.
+    Utilise la médiane journalière par patient pour respecter l'indépendance.
+
+    Retourne dict {polluant: {groupe_label: C*}}
+    """
+    if groupes is None:
+        groupes = [
+            ('groupe_AB',    'Groupe A',   'Groupe B',   'A vs B',   '#2E86AB'),
+            ('groupe_CD',    'Groupe C',   'Groupe D',   'C vs D',   '#52B788'),
+            ('groupe_AC_BD', 'Groupe A+C', 'Groupe B+D', 'A+C vs B+D','#7B2D8B'),
+        ]
+
+    pol_ret      = cfg.get('polluants_retenus', ['PM25','O3'])
+    fenetre_ans  = cfg.get('fenetre_ans', 10)
+    fenetre_mois = int(fenetre_ans * 12)
+
+    print(f"\n{'='*65}")
+    print("PARTIE 11e — SEUIL OPTIMAL C* SUR DONNÉES JOURNALIÈRES BRUTES")
+    print(f"Fenêtre : {fenetre_ans} an(s) | Polluants : {pol_ret}")
+    print(f"{'='*65}")
+
+    resultats_c_star = {}
+
+    for pol in pol_ret:
+        if pol not in data.columns:
+            print(f"⚠️  {pol} absent de data"); continue
+
+        resultats_c_star[pol] = {}
+        print(f"\n── Polluant : {pol} ──")
+
+        for col_g, g1, g2, titre, couleur in groupes:
+            print(f"\n  {titre}")
+
+            # Construire dataset : médiane journalière par patient + label
+            rows_med = []
+            for pseudo in df_final['pseudo_provisoire'].unique():
+                row_f = df_final[df_final['pseudo_provisoire']==pseudo]
+                if len(row_f) == 0: continue
+                date_diag  = pd.Timestamp(row_f['date_diagnostic'].iloc[0])
+                date_debut = date_diag - pd.DateOffset(months=fenetre_mois)
+                groupe_val = row_f[col_g].iloc[0]
+                if groupe_val not in [g1, g2]: continue
+
+                d_pat = data[(data['pseudo_provisoire']==pseudo) &
+                              (data['date']>=date_debut) &
+                              (data['date']< date_diag)][[pol]].dropna()
+                if len(d_pat) < 30: continue
+
+                # Médiane journalière = résumé robuste de l'exposition
+                med_val = float(d_pat[pol].median())
+                rows_med.append({'pseudo':pseudo,'mediane':med_val,
+                                  'outcome':1 if groupe_val==g1 else 0})
+
+            if len(rows_med) < 30:
+                print(f"  ⚠️  Effectif insuffisant"); continue
+
+            df_med = pd.DataFrame(rows_med)
+            n1 = (df_med['outcome']==1).sum()
+            n2 = (df_med['outcome']==0).sum()
+
+            # Courbe ROC sur médiane journalière
+            try:
+                fpr, tpr, thresholds = roc_curve(df_med['outcome'], df_med['mediane'])
+                auc = roc_auc_score(df_med['outcome'], df_med['mediane'])
+                youden  = tpr - fpr
+                best_i  = np.argmax(youden)
+                c_star  = round(float(thresholds[best_i]), 1)
+                sens    = round(float(tpr[best_i]), 3)
+                spec    = round(float(1-fpr[best_i]), 3)
+                _, p_mwu = mannwhitneyu(
+                    df_med.loc[df_med['outcome']==1,'mediane'],
+                    df_med.loc[df_med['outcome']==0,'mediane'],
+                    alternative='two-sided')
+
+                resultats_c_star[pol][titre] = {
+                    'C_star': c_star, 'AUC': round(auc,3),
+                    'Sens': sens, 'Spec': spec,
+                    'Youden': round(float(youden[best_i]),3),
+                    'p_MWU': '<0.001' if p_mwu<0.001 else f'{p_mwu:.3f}',
+                    'Sig': '✅' if p_mwu<0.05 else '—',
+                    'N_g1': int(n1), 'N_g2': int(n2),
+                    'col_g': col_g, 'g1': g1, 'g2': g2,
+                }
+
+                print(f"  C* = {c_star} μg/m³ | AUC={auc:.3f} | "
+                      f"Sens={sens:.3f} Spec={spec:.3f} | p={('<0.001' if p_mwu<0.001 else f'{p_mwu:.3f}')} "
+                      f"{'✅' if p_mwu<0.05 else '—'}")
+
+                # Visualisation
+                fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+                fig.suptitle(f'C* — {pol} | {titre}', fontsize=12, fontweight='bold')
+
+                # Courbe ROC
+                axes[0].plot(fpr, tpr, color=couleur, lw=2.5, label=f'AUC={auc:.3f}')
+                axes[0].plot([0,1],[0,1],'k--',lw=1,alpha=0.4)
+                lbl_opt = f'C*={c_star} | Sens={sens:.2f} Spec={spec:.2f}'
+                axes[0].scatter(fpr[best_i], tpr[best_i], s=120, color='red',
+                                zorder=5, label=lbl_opt)
+                # Seuils arbitraires sur la ROC
+                seuils_arb = cfg.get('seuils_pct',{}).get(pol,[])
+                for s_arb in seuils_arb:
+                    s_bin_arb = (df_med['mediane'] > s_arb).astype(int)
+                    try:
+                        fpr_arb = 1 - (s_bin_arb[df_med['outcome']==0]==0).mean()
+                        tpr_arb = (s_bin_arb[df_med['outcome']==1]==1).mean()
+                        axes[0].scatter(fpr_arb, tpr_arb, s=50, color='orange',
+                                        marker='D', zorder=4, alpha=0.7)
+                        axes[0].annotate(f'>{s_arb}',
+                                         xy=(fpr_arb,tpr_arb),
+                                         xytext=(fpr_arb+0.02,tpr_arb-0.03),
+                                         fontsize=7, color='darkorange')
+                    except Exception: pass
+
+                axes[0].set_xlabel('1 - Spécificité'); axes[0].set_ylabel('Sensibilité')
+                axes[0].legend(fontsize=8, loc='lower right'); axes[0].grid(True,alpha=0.3)
+
+                # Violin plot médiane groupe 1 vs groupe 2
+                g1_vals = df_med.loc[df_med['outcome']==1,'mediane'].values
+                g2_vals = df_med.loc[df_med['outcome']==0,'mediane'].values
+                parts = axes[1].violinplot([g1_vals, g2_vals], positions=[0,1],
+                                            showmedians=True, showextrema=True)
+                for pc in parts['bodies']:
+                    pc.set_alpha(0.6)
+                axes[1].axhline(y=c_star, color='red', linestyle='--', lw=2,
+                                 label=f'C* = {c_star} μg/m³')
+                for s_arb in seuils_arb[:3]:
+                    axes[1].axhline(y=s_arb, color='orange', linestyle=':', lw=1,
+                                     alpha=0.7, label=f'Arbitraire {s_arb}')
+                axes[1].set_xticks([0,1]); axes[1].set_xticklabels([f'{g1}\nn={n1}',f'{g2}\nn={n2}'])
+                axes[1].set_ylabel(f'{pol} médiane journalière (μg/m³)')
+                axes[1].legend(fontsize=8); axes[1].grid(True,axis='y',alpha=0.3)
+                plt.tight_layout(); plt.show()
+
+            except Exception as e:
+                print(f"  ❌ Erreur : {e}"); continue
+
+    # Tableau synthèse
+    rows_synth = []
+    for pol, gdict in resultats_c_star.items():
+        for titre, res in gdict.items():
+            rows_synth.append({'Polluant':pol,'Groupe':titre,
+                'C* (μg/m³)':res['C_star'],'AUC':res['AUC'],
+                'Sensibilité':res['Sens'],'Spécificité':res['Spec'],
+                'p MWU':res['p_MWU'],'Sig':res['Sig']})
+    df_synth = pd.DataFrame(rows_synth)
+    print(f"\n── Synthèse C* ──")
+    try:
+        from IPython.display import display; display(df_synth)
+    except Exception:
+        print(df_synth.to_string(index=False))
+
+    return resultats_c_star
+
+
+def calculer_pct_seuil_optimal(data, df_clinique, df_final, cfg,
+                                 resultats_c_star, groupes=None):
+    """
+    Partie 11f — Calcule PM25_pct_supC* pour chaque patient,
+    puis cherche le seuil de % optimal P* par Youden.
+
+    Retourne df_final enrichi + dict {polluant: {groupe: P*}}
+    """
+    if groupes is None:
+        groupes = [
+            ('groupe_AB',    'Groupe A',   'Groupe B',   'A vs B',    '#2E86AB'),
+            ('groupe_CD',    'Groupe C',   'Groupe D',   'C vs D',    '#52B788'),
+            ('groupe_AC_BD', 'Groupe A+C', 'Groupe B+D', 'A+C vs B+D','#7B2D8B'),
+        ]
+
+    fenetre_ans  = cfg.get('fenetre_ans', 10)
+    fenetre_mois = int(fenetre_ans * 12)
+
+    print(f"\n{'='*65}")
+    print("PARTIE 11f — CALCUL PM25_pct_supC* ET SEUIL % OPTIMAL P*")
+    print(f"{'='*65}")
+
+    df_out  = df_final.copy()
+    res_p_star = {}
+
+    for pol, gdict in resultats_c_star.items():
+        if pol not in data.columns: continue
+        res_p_star[pol] = {}
+
+        # Choisir C* le plus discriminant (AUC max) parmi les groupes
+        best_groupe = max(gdict, key=lambda k: gdict[k]['AUC'])
+        c_star_best = gdict[best_groupe]['C_star']
+        print(f"\n── {pol} : C* retenu = {c_star_best} μg/m³ (meilleur dans {best_groupe})")
+
+        # Calculer pct_supC* pour chaque patient
+        col_new  = f'{pol}_pct_sup{c_star_best}'
+        pct_vals = {}
+
+        for pseudo in df_final['pseudo_provisoire'].unique():
+            row_f = df_final[df_final['pseudo_provisoire']==pseudo]
+            if len(row_f) == 0: continue
+            date_diag  = pd.Timestamp(row_f['date_diagnostic'].iloc[0])
+            date_debut = date_diag - pd.DateOffset(months=fenetre_mois)
+            d_pat = data[(data['pseudo_provisoire']==pseudo) &
+                          (data['date']>=date_debut) &
+                          (data['date']<date_diag)][[pol]].dropna()
+            if len(d_pat) == 0:
+                pct_vals[pseudo] = float('nan'); continue
+            pct = round((d_pat[pol] > c_star_best).sum() / len(d_pat) * 100, 1)
+            pct_vals[pseudo] = pct
+
+        df_out[col_new] = df_out['pseudo_provisoire'].map(pct_vals)
+        print(f"  ✅ Colonne créée : {col_new}")
+        print(f"     Médiane cohorte : {df_out[col_new].median():.1f}%")
+
+        # Trouver P* par Youden sur cette nouvelle variable
+        for col_g, g1, g2, titre, couleur in groupes:
+            df_sub = df_out[df_out[col_g].isin([g1,g2])].copy()
+            df_sub['outcome'] = (df_sub[col_g]==g1).astype(int)
+            s = df_sub[[col_new,'outcome']].dropna()
+            if len(s) < 30: continue
+            s1 = s.loc[s['outcome']==1,col_new].values
+            s2 = s.loc[s['outcome']==0,col_new].values
+            if len(s1) < 5 or len(s2) < 5: continue
+
+            try:
+                fpr,tpr,thresholds = roc_curve(s['outcome'],s[col_new])
+                auc = roc_auc_score(s['outcome'],s[col_new])
+                youden = tpr-fpr; best_i = np.argmax(youden)
+                p_star  = round(float(thresholds[best_i]),1)
+                sens    = round(float(tpr[best_i]),3)
+                spec    = round(float(1-fpr[best_i]),3)
+                _,p_mwu = mannwhitneyu(s1,s2,alternative='two-sided')
+
+                res_p_star[pol][titre] = {
+                    'col': col_new,'C_star':c_star_best,'P_star':p_star,
+                    'AUC':round(auc,3),'Sens':sens,'Spec':spec,
+                    'p_MWU':'<0.001' if p_mwu<0.001 else f'{p_mwu:.3f}',
+                    'Sig':'✅' if p_mwu<0.05 else '—'}
+
+                print(f"\n  {titre} : P* = {p_star}% | AUC={auc:.3f} | "
+                      f"Sens={sens} Spec={spec} | p={res_p_star[pol][titre]['p_MWU']} "
+                      f"{res_p_star[pol][titre]['Sig']}")
+
+                # Visualisation
+                fig, axes = plt.subplots(1,2,figsize=(12,4.5))
+                fig.suptitle(f'{pol} — {titre}\nC*={c_star_best} μg/m³ | P*={p_star}%',
+                             fontsize=12,fontweight='bold')
+
+                # ROC sur pct_supC*
+                axes[0].plot(fpr,tpr,color=couleur,lw=2.5,label=f'AUC={auc:.3f}')
+                axes[0].plot([0,1],[0,1],'k--',lw=1,alpha=0.4)
+                lbl_ = f'P*={p_star}% | Sens={sens:.2f} Spec={spec:.2f}'
+                axes[0].scatter(fpr[best_i],tpr[best_i],s=120,color='red',
+                                zorder=5,label=lbl_)
+                axes[0].set_xlabel('1 - Spécificité'); axes[0].set_ylabel('Sensibilité')
+                axes[0].set_title(f'ROC sur {col_new}',fontweight='bold')
+                axes[0].legend(fontsize=8,loc='lower right'); axes[0].grid(True,alpha=0.3)
+
+                # Boxplot comparaison arbitraire vs C*
+                # Trouver la meilleure variable arbitraire pour comparaison
+                arb_col = None
+                for s_arb in cfg.get('seuils_pct',{}).get(pol,[]):
+                    c_arb = f'{pol}_pct_sup{s_arb}'
+                    if c_arb in df_sub.columns:
+                        arb_col = c_arb; break
+
+                data_box = {f'Auto\n{col_new}': df_sub[[col_new,'outcome']].dropna()}
+                if arb_col:
+                    data_box[f'Arbitraire\n{arb_col.split("_")[-1]}'] = df_sub[[arb_col,'outcome']].dropna()
+
+                pos = 0
+                for lbl_b,d_b in data_box.items():
+                    g1v = d_b.loc[d_b['outcome']==1,d_b.columns[0]].values
+                    g2v = d_b.loc[d_b['outcome']==0,d_b.columns[0]].values
+                    axes[1].boxplot([g1v,g2v],positions=[pos,pos+0.35],
+                                     widths=0.3,patch_artist=True,
+                                     boxprops=dict(facecolor=couleur if pos==0 else 'orange',alpha=0.6))
+                    axes[1].text(pos+0.175,-5,lbl_b,ha='center',fontsize=8)
+                    pos += 1.2
+
+                axes[1].set_ylabel('% du temps au-dessus du seuil')
+                axes[1].set_title('Comparaison arbitraire vs C*',fontweight='bold')
+                axes[1].grid(True,axis='y',alpha=0.3)
+                plt.tight_layout(); plt.show()
+
+            except Exception as e:
+                print(f"  ❌ {e}"); continue
+
+    return df_out, res_p_star
+
+
+def trouver_seuils_youden_continus(df_final, cfg, groupes=None):
+    """
+    Partie 11g — Seuils Youden pour les variables continues déjà dans df_final :
+    cumul et pente. Crée des variables binaires correspondantes.
+
+    Retourne df_final enrichi + dict des seuils.
+    """
+    if groupes is None:
+        groupes = [
+            ('groupe_AB',    'Groupe A',   'Groupe B',   'A vs B',    '#2E86AB'),
+            ('groupe_CD',    'Groupe C',   'Groupe D',   'C vs D',    '#52B788'),
+            ('groupe_AC_BD', 'Groupe A+C', 'Groupe B+D', 'A+C vs B+D','#7B2D8B'),
+        ]
+
+    pol_ret = cfg.get('polluants_retenus', ['PM25','O3'])
+    df_out  = df_final.copy()
+    seuils_youden_continus = {}
+
+    print(f"\n{'='*65}")
+    print("PARTIE 11g — SEUILS YOUDEN CUMUL ET PENTE")
+    print(f"{'='*65}")
+
+    for type_var, suffix, label_type in [
+        ('cumul',  '_cumul_',         'Cumul'),
+        ('pente',  '_mm365_sen_pente', 'Pente Theil-Sen'),
+    ]:
+        print(f"\n── {label_type} ──")
+        for pol in pol_ret:
+            # Trouver la colonne
+            if type_var == 'cumul':
+                cols_v = [c for c in df_final.columns
+                          if c.startswith(f'{pol}_cumul_') and 'pct' not in c and 'manq' not in c]
+                if not cols_v: continue
+                var = cols_v[0]
+            else:
+                var = f'{pol}_mm365_sen_pente'
+                if var not in df_final.columns: continue
+
+            seuils_youden_continus[var] = {}
+
+            for col_g,g1,g2,titre,couleur in groupes:
+                df_sub = df_out[df_out[col_g].isin([g1,g2])].copy()
+                df_sub['outcome'] = (df_sub[col_g]==g1).astype(int)
+                s = df_sub[[var,'outcome']].dropna()
+                if len(s)<30 or s[var].nunique()<5: continue
+                s1 = s.loc[s['outcome']==1,var].values
+                s2 = s.loc[s['outcome']==0,var].values
+                if len(s1)<5 or len(s2)<5: continue
+
+                try:
+                    fpr,tpr,thresholds = roc_curve(s['outcome'],s[var])
+                    auc   = roc_auc_score(s['outcome'],s[var])
+                    youd  = tpr-fpr; best_i = np.argmax(youd)
+                    seuil = round(float(thresholds[best_i]),1)
+                    sens  = round(float(tpr[best_i]),3)
+                    spec  = round(float(1-fpr[best_i]),3)
+                    _,p   = mannwhitneyu(s1,s2,alternative='two-sided')
+
+                    # Variable binaire
+                    col_bin = f'{var}_sup{seuil}'.replace('.','_').replace('-','neg')
+                    df_out[col_bin] = (df_out[var] > seuil).astype(int)
+
+                    seuils_youden_continus[var][titre] = {
+                        'seuil':seuil,'col_bin':col_bin,'AUC_cont':round(auc,3),
+                        'AUC_bin':round(roc_auc_score(
+                            s['outcome'],
+                            (s[var]>seuil).astype(int)),3),
+                        'Sens':sens,'Spec':spec,
+                        'p_MWU':'<0.001' if p<0.001 else f'{p:.3f}',
+                        'Sig':'✅' if p<0.05 else '—'}
+
+                    print(f"  {var:<35} {titre}")
+                    print(f"    Seuil Youden : {seuil} | AUC cont={auc:.3f} | "
+                          f"AUC bin={seuils_youden_continus[var][titre]['AUC_bin']:.3f} | "
+                          f"p={seuils_youden_continus[var][titre]['p_MWU']} "
+                          f"{seuils_youden_continus[var][titre]['Sig']}")
+                    print(f"    Colonne créée : {col_bin}")
+
+                    # Visualisation
+                    fig,ax = plt.subplots(figsize=(7,4.5))
+                    ax.plot(fpr,tpr,color=couleur,lw=2.5,label=f'AUC={auc:.3f}')
+                    ax.plot([0,1],[0,1],'k--',lw=1,alpha=0.4)
+                    lbl_ = f'Seuil={seuil} | Sens={sens:.2f} Spec={spec:.2f}'
+                    ax.scatter(fpr[best_i],tpr[best_i],s=120,color='red',zorder=5,label=lbl_)
+                    ax.set_xlabel('1 - Spécificité'); ax.set_ylabel('Sensibilité')
+                    ax.set_title(f'ROC {label_type} — {pol} | {titre}',fontweight='bold')
+                    ax.legend(fontsize=9,loc='lower right'); ax.grid(True,alpha=0.3)
+                    plt.tight_layout(); plt.show()
+
+                except Exception as e:
+                    print(f"  ❌ {var} {titre}: {e}"); continue
+
+    return df_out, seuils_youden_continus
+
+
+def synthese_approches(df_final, cfg,
+                        res_seuils_bh,
+                        resultats_c_star,
+                        res_p_star,
+                        seuils_youden_continus,
+                        groupes=None):
+    """
+    Partie 11h — Synthèse comparative complète.
+    Compare AUC univariées : approche manuelle (BH) vs approche automatique (Youden).
+    """
+    if groupes is None:
+        groupes = [
+            ('groupe_AB',    'Groupe A',   'Groupe B',   'A vs B',    '#2E86AB'),
+            ('groupe_CD',    'Groupe C',   'Groupe D',   'C vs D',    '#52B788'),
+            ('groupe_AC_BD', 'Groupe A+C', 'Groupe B+D', 'A+C vs B+D','#7B2D8B'),
+        ]
+
+    pol_ret = cfg.get('polluants_retenus', ['PM25','O3'])
+
+    print(f"\n{'='*65}")
+    print("PARTIE 11h — SYNTHÈSE COMPARATIVE : MANUELLE vs AUTOMATIQUE")
+    print(f"{'='*65}")
+
+    rows = []
+
+    for col_g,g1,g2,titre,couleur in groupes:
+        df_sub = df_final[df_final[col_g].isin([g1,g2])].copy()
+        df_sub['outcome'] = (df_sub[col_g]==g1).astype(int)
+
+        for pol in pol_ret:
+            # ── Approche manuelle BH ──────────────────────────────────────────
+            # Seuil arbitraire le plus significatif
+            seuil_bh  = None; auc_bh_pct = None
+            df_bh = res_seuils_bh.get('df_res', pd.DataFrame())
+            if len(df_bh) > 0:
+                df_bh_pol = df_bh[(df_bh['Polluant']==pol)&(df_bh['col_g']==col_g)]
+                if len(df_bh_pol) > 0:
+                    best_bh   = df_bh_pol.loc[df_bh_pol['p-value'].idxmin()]
+                    seuil_bh  = int(best_bh['Seuil'])
+                    col_bh    = f'{pol}_pct_sup{seuil_bh}'
+                    if col_bh in df_sub.columns:
+                        s_bh = df_sub[[col_bh,'outcome']].dropna()
+                        if len(s_bh) > 10:
+                            try: auc_bh_pct = round(roc_auc_score(s_bh['outcome'],s_bh[col_bh]),3)
+                            except Exception: pass
+
+            # Cumul continu
+            cols_cum = [c for c in df_final.columns if c.startswith(f'{pol}_cumul_')
+                        and 'pct' not in c and 'manq' not in c]
+            auc_cumul_cont = None
+            if cols_cum:
+                col_cum = cols_cum[0]
+                s_cum   = df_sub[[col_cum,'outcome']].dropna()
+                if len(s_cum) > 10:
+                    try: auc_cumul_cont = round(roc_auc_score(s_cum['outcome'],s_cum[col_cum]),3)
+                    except Exception: pass
+
+            # Pente continue
+            col_pente = f'{pol}_mm365_sen_pente'
+            auc_pente_cont = None
+            if col_pente in df_sub.columns:
+                s_p = df_sub[[col_pente,'outcome']].dropna()
+                if len(s_p) > 10:
+                    try: auc_pente_cont = round(roc_auc_score(s_p['outcome'],s_p[col_pente]),3)
+                    except Exception: pass
+
+            # ── Approche automatique Youden ───────────────────────────────────
+            # C* → pct_supC* → P*
+            c_star   = resultats_c_star.get(pol,{}).get(titre,{}).get('C_star')
+            auc_c_star = resultats_c_star.get(pol,{}).get(titre,{}).get('AUC')
+            p_star   = res_p_star.get(pol,{}).get(titre,{}).get('P_star')
+            auc_pct_auto = res_p_star.get(pol,{}).get(titre,{}).get('AUC')
+
+            # Cumul binaire Youden
+            auc_cumul_bin = None
+            if cols_cum:
+                d_cum_y = seuils_youden_continus.get(cols_cum[0],{}).get(titre,{})
+                auc_cumul_bin = d_cum_y.get('AUC_bin')
+
+            # Pente binaire Youden
+            auc_pente_bin = None
+            d_pente_y = seuils_youden_continus.get(col_pente,{}).get(titre,{})
+            auc_pente_bin = d_pente_y.get('AUC_bin')
+
+            rows.append({
+                'Groupe'          : titre,
+                'Polluant'        : pol,
+                # Concentration
+                'C_arbitraire'    : f'>{seuil_bh} μg/m³' if seuil_bh else '—',
+                'AUC_pct_arb'     : auc_bh_pct,
+                'C_star'          : f'>{c_star} μg/m³' if c_star else '—',
+                'AUC_C_star'      : auc_c_star,
+                'Δ_AUC_conc'      : round(auc_c_star-auc_bh_pct,3)
+                                      if (auc_c_star and auc_bh_pct) else '—',
+                # % du temps
+                'Seuil_%_arb'     : f'>{seuil_bh}→%' if seuil_bh else '—',
+                'AUC_%_arb'       : auc_bh_pct,
+                'P_star'          : f'>{p_star}%' if p_star else '—',
+                'AUC_%_auto'      : auc_pct_auto,
+                'Δ_AUC_pct'       : round(auc_pct_auto-auc_bh_pct,3)
+                                      if (auc_pct_auto and auc_bh_pct) else '—',
+                # Cumul
+                'AUC_cumul_cont'  : auc_cumul_cont,
+                'AUC_cumul_bin'   : auc_cumul_bin,
+                'Δ_AUC_cumul'     : round(auc_cumul_bin-auc_cumul_cont,3)
+                                      if (auc_cumul_bin and auc_cumul_cont) else '—',
+                # Pente
+                'AUC_pente_cont'  : auc_pente_cont,
+                'AUC_pente_bin'   : auc_pente_bin,
+                'Δ_AUC_pente'     : round(auc_pente_bin-auc_pente_cont,3)
+                                      if (auc_pente_bin and auc_pente_cont) else '—',
+            })
+
+    df_comp = pd.DataFrame(rows)
+    print("\n── Tableau synthèse ──")
+    try:
+        from IPython.display import display; display(df_comp)
+    except Exception:
+        print(df_comp.to_string(index=False))
+
+    # Visualisation — barplot comparatif AUC
+    auc_cols = [('AUC_pct_arb','AUC_%_auto','% du temps'),
+                ('AUC_cumul_cont','AUC_cumul_bin','Cumul'),
+                ('AUC_pente_cont','AUC_pente_bin','Pente')]
+
+    for col_man, col_auto, lbl_type in auc_cols:
+        df_v = df_comp[['Groupe','Polluant',col_man,col_auto]].dropna()
+        if len(df_v) == 0: continue
+        fig, ax = plt.subplots(figsize=(10, max(3, len(df_v)*0.5+1)))
+        x = range(len(df_v))
+        w = 0.35
+        ax.bar([i-w/2 for i in x], pd.to_numeric(df_v[col_man],errors='coerce'),
+               width=w, color='#AAAAAA', label='Manuelle (BH)', edgecolor='white')
+        ax.bar([i+w/2 for i in x], pd.to_numeric(df_v[col_auto],errors='coerce'),
+               width=w, color='#2E86AB', label='Automatique (Youden)', edgecolor='white')
+        ax.axhline(y=0.5,color='red',linestyle='--',lw=1,alpha=0.6,label='AUC=0.5')
+        ax.set_xticks(range(len(df_v)))
+        ax.set_xticklabels([f"{r['Polluant']}\n{r['Groupe']}"
+                             for _,r in df_v.iterrows()], fontsize=8, rotation=20)
+        ax.set_ylabel('AUC univariée')
+        ax.set_title(f'Comparaison AUC — {lbl_type}\nManuelle vs Automatique',
+                     fontweight='bold')
+        ax.legend(fontsize=9); ax.grid(True,axis='y',alpha=0.3)
+        plt.tight_layout(); plt.show()
+
+    return df_comp
+
+
+def regressions_comparatives(df_final, cfg,
+                               res_p_star,
+                               seuils_youden_continus,
+                               groupes_reg=None):
+    """
+    Partie 11i — Deux séries de régressions côte à côte :
+      Série A : variables manuelles BH (Partie 7)
+      Série B : variables automatiques Youden
+
+    Retourne dict avec résultats des deux séries + comparaison.
+    """
+    if groupes_reg is None:
+        groupes_reg = [
+            ('AB',   'groupe_AB',    'Groupe A',   'Groupe B',   True,  '#2E86AB'),
+            ('CD',   'groupe_CD',    'Groupe C',   'Groupe D',   False, '#52B788'),
+            ('ACBD', 'groupe_AC_BD', 'Groupe A+C', 'Groupe B+D', False, '#7B2D8B'),
+        ]
+
+    pol_ret = cfg.get('polluants_retenus', ['PM25','O3'])
+
+    # ── Série A : variables CFG actuelles (manuelles BH) ─────────────────────
+    print(f"\n{'█'*65}")
+    print("SÉRIE A — Variables manuelles BH (identique Partie 7)")
+    print(f"{'█'*65}")
+    res_A = analyses_principales(df_final, cfg)
+
+    # ── Construire CFG Youden ─────────────────────────────────────────────────
+    cfg_y = copy.deepcopy(cfg)
+
+    # Remplacer les variables pct par les variables C* automatiques
+    # + ajouter les binaires cumul et pente Youden
+    vars_youden_extra = []
+
+    for pol in pol_ret:
+        # Variable pct_supC* (depuis res_p_star)
+        for titre, res in res_p_star.get(pol,{}).items():
+            col_pct_auto = res.get('col')
+            if col_pct_auto and col_pct_auto in df_final.columns:
+                if col_pct_auto not in vars_youden_extra:
+                    vars_youden_extra.append(col_pct_auto)
+
+        # Cumul binaire Youden
+        cols_cum = [c for c in df_final.columns
+                    if c.startswith(f'{pol}_cumul_') and 'pct' not in c and 'manq' not in c]
+        if cols_cum:
+            d_cum_y = seuils_youden_continus.get(cols_cum[0],{})
+            for titre, res in d_cum_y.items():
+                col_bin = res.get('col_bin')
+                if col_bin and col_bin in df_final.columns:
+                    if col_bin not in vars_youden_extra:
+                        vars_youden_extra.append(col_bin)
+                    break  # Un seul seuil par variable
+
+        # Pente binaire Youden
+        col_pente = f'{pol}_mm365_sen_pente'
+        d_pente_y = seuils_youden_continus.get(col_pente,{})
+        for titre, res in d_pente_y.items():
+            col_bin = res.get('col_bin')
+            if col_bin and col_bin in df_final.columns:
+                if col_bin not in vars_youden_extra:
+                    vars_youden_extra.append(col_bin)
+                break
+
+    # Retirer les variables pct arbitraires et remplacer par Youden
+    cfg_y['pct_pm25'] = []
+    cfg_y['pct_pm10'] = []
+    cfg_y['pct_o3']   = []
+    cfg_y['cumul']    = []   # cumul continu remplacé par binaire Youden
+    # Garder tendance continue
+    # Ajouter les variables Youden via icpe (hack : ajouter dans icpe)
+    cfg_y['icpe'] = list(cfg.get('icpe',[])) + vars_youden_extra
+
+    print(f"\n{'█'*65}")
+    print("SÉRIE B — Variables automatiques Youden")
+    print(f"{'█'*65}")
+    print(f"Variables Youden ajoutées : {vars_youden_extra}")
+    res_B = analyses_principales(df_final, cfg_y)
+
+    # ── Comparaison AUC ───────────────────────────────────────────────────────
+    titres = {'AB':'A vs B','CD':'C vs D','ACBD':'A+C vs B+D'}
+    rows_comp = []
+    for key in ['AB','CD','ACBD']:
+        auc_a = res_A.get(key,{}).get('auc',float('nan'))
+        auc_b = res_B.get(key,{}).get('auc',float('nan'))
+        rows_comp.append({
+            'Groupe'      : titres.get(key,key),
+            'AUC Série A (BH)'    : round(auc_a,3) if not pd.isna(auc_a) else 'NA',
+            'AUC Série B (Youden)': round(auc_b,3) if not pd.isna(auc_b) else 'NA',
+            'Δ AUC (B-A)' : round(auc_b-auc_a,3)
+                             if (not pd.isna(auc_a) and not pd.isna(auc_b)) else 'NA',
+        })
+    df_comp_final = pd.DataFrame(rows_comp)
+    print("\n── Comparaison AUC finale ──")
+    try:
+        from IPython.display import display; display(df_comp_final)
+    except Exception:
+        print(df_comp_final.to_string(index=False))
+
+    # Barplot AUC
+    fig, ax = plt.subplots(figsize=(8, 4))
+    x = range(3)
+    aucs_a = [res_A.get(k,{}).get('auc',0) for k in ['AB','CD','ACBD']]
+    aucs_b = [res_B.get(k,{}).get('auc',0) for k in ['AB','CD','ACBD']]
+    ax.bar([i-0.2 for i in x], aucs_a, width=0.35,
+           color='#AAAAAA', label='Série A — BH (manuelle)', edgecolor='white')
+    ax.bar([i+0.2 for i in x], aucs_b, width=0.35,
+           color='#2E86AB', label='Série B — Youden (auto)', edgecolor='white')
+    ax.axhline(y=0.5, color='red', linestyle='--', lw=1, alpha=0.5)
+    ax.set_xticks(range(3))
+    ax.set_xticklabels(['A vs B','C vs D','A+C vs B+D'])
+    ax.set_ylabel('AUC')
+    ax.set_ylim(0.4, max(max(aucs_a), max(aucs_b)) * 1.1 + 0.05)
+    ax.set_title('Comparaison AUC — BH vs Youden', fontweight='bold')
+    ax.legend(fontsize=9); ax.grid(True, axis='y', alpha=0.3)
+    for i, (a, b) in enumerate(zip(aucs_a, aucs_b)):
+        delta = round(b-a, 3)
+        color_d = '#16A34A' if delta > 0 else '#DC2626' if delta < 0 else '#888888'
+        ax.text(i, max(a,b)+0.01, f'Δ={delta:+.3f}',
+                ha='center', fontsize=9, color=color_d, fontweight='bold')
+    plt.tight_layout(); plt.show()
+
+    return {'serie_A': res_A, 'serie_B': res_B,
+            'comparaison': df_comp_final, 'cfg_youden': cfg_y}
+
+
+
+def chercher_seuils_optimaux(df, cfg, groupes=None, comparer_partie4=True):
+    """
+    Partie 11c — Pour chaque variable continue déjà dans df_final
+    (cumul, pente Sen, % du temps arbitraires), identifie le seuil optimal
+    par l'indice de Youden (max sensibilité + spécificité - 1).
+
+    Si comparer_partie4=True, compare avec les seuils BH retenus (Partie 4).
+
+    Retourne dict {groupe_label: DataFrame seuils optimaux}.
+    """
+    if groupes is None:
+        groupes = [
+            ('groupe_AB',    'Groupe A',   'Groupe B',   'A vs B — Mutations NF',          '#2E86AB'),
+            ('groupe_CD',    'Groupe C',   'Groupe D',   'C vs D — Non-fumeurs vs Fumeurs', '#52B788'),
+            ('groupe_AC_BD', 'Groupe A+C', 'Groupe B+D', 'A+C vs B+D',                     '#7B2D8B'),
+        ]
+
+    pol_ret = cfg.get('polluants_retenus', ['PM25','PM10','NO2','O3'])
+
+    def _vars_a_tester(df, cfg):
+        """Collecte toutes les variables continues à tester."""
+        vars_out = {'cumul': [], 'pente': [], 'pct': []}
+        for col in df.columns:
+            for pol in pol_ret:
+                if (col.startswith(f'{pol}_cumul_') and 'pct' not in col
+                        and 'manq' not in col):
+                    vars_out['cumul'].append(col)
+                elif col == f'{pol}_mm365_sen_pente':
+                    vars_out['pente'].append(col)
+                elif col.startswith(f'{pol}_pct_sup'):
+                    vars_out['pct'].append(col)
+        # Dédoublonner
+        for k in vars_out:
+            vars_out[k] = list(dict.fromkeys(vars_out[k]))
+        return vars_out
+
+    # Seuils BH pour comparaison
+    seuils_bh_map = {}
+    if comparer_partie4:
+        for pol in pol_ret:
+            for key in [f'pct_{pol.lower()}', f'pct_{pol}']:
+                for s in cfg.get(key, []):
+                    seuils_bh_map[f'{pol}_pct_sup{s}'] = s
+
+    print(f"\n{'='*65}")
+    print("PARTIE 11c — SEUILS OPTIMAUX (YOUDEN) SUR VARIABLES df_final")
+    print(f"{'='*65}")
+    print(f"Polluants retenus : {pol_ret}")
+
+    resultats_dict = {}
+
+    for col_g, g1, g2, titre, couleur in groupes:
+        print(f"\n{'─'*55}\n  {titre}\n{'─'*55}")
+        df_sub = df[df[col_g].isin([g1, g2])].copy()
+        df_sub['outcome'] = (df_sub[col_g] == g1).astype(int)
+
+        vars_par_type = _vars_a_tester(df, cfg)
+        rows = []
+
+        for type_var, vars_list in vars_par_type.items():
+            type_label = {
+                'cumul': 'Cumul exposition',
+                'pente': 'Pente Theil-Sen',
+                'pct'  : '% du temps (seuils arbitraires)'
+            }[type_var]
+
+            for var in vars_list:
+                if var not in df_sub.columns: continue
+                s = df_sub[[var, 'outcome']].dropna()
+                if len(s) < 30 or s[var].nunique() < 3: continue
+                s1 = s.loc[s['outcome']==1, var].values
+                s2 = s.loc[s['outcome']==0, var].values
+                if len(s1) < 5 or len(s2) < 5: continue
+
+                try:
+                    fpr, tpr, thresholds = roc_curve(s['outcome'], s[var])
+                    auc  = roc_auc_score(s['outcome'], s[var])
+                    youd = tpr - fpr
+                    bi   = np.argmax(youd)
+                    sopt = round(float(thresholds[bi]), 1)
+                    sens = round(float(tpr[bi]), 3)
+                    spec = round(float(1-fpr[bi]), 3)
+                    _, p = mannwhitneyu(s1, s2, alternative='two-sided')
+
+                    row = {
+                        'Variable'   : var,
+                        'Type'       : type_label,
+                        'AUC'        : round(auc, 3),
+                        'Seuil_opt'  : sopt,
+                        'Sensibilité': sens,
+                        'Spécificité': spec,
+                        'Youden'     : round(float(youd[bi]), 3),
+                        'p_MWU'      : '<0.001' if p<0.001 else f'{p:.3f}',
+                        'p_num'      : float(p),
+                        'Sig'        : '✅' if p<0.05 else '—',
+                    }
+
+                    # Comparaison avec seuil BH
+                    if comparer_partie4 and var in seuils_bh_map:
+                        seuil_bh = seuils_bh_map[var]
+                        row['Seuil_BH']  = seuil_bh
+                        row['Différent'] = '⚠️' if abs(sopt - seuil_bh) > 1 else '='
+                    else:
+                        row['Seuil_BH']  = '—'
+                        row['Différent'] = '—'
+
+                    rows.append(row)
+
+                except Exception:
+                    continue
+
+        if not rows:
+            print("  ⚠️  Aucune variable testable.")
+            resultats_dict[titre] = pd.DataFrame()
+            continue
+
+        df_seuils = pd.DataFrame(rows).sort_values('AUC', ascending=False)
+        resultats_dict[titre] = df_seuils
+
+        try:
+            from IPython.display import display
+            display(df_seuils.drop(columns=['p_num']))
+        except Exception:
+            print(df_seuils.drop(columns=['p_num']).to_string(index=False))
+
+        # ── Visualisation ROC par variable ────────────────────────────────────
+        vars_plot = (df_seuils[df_seuils['Sig']=='✅']['Variable'].tolist()
+                     or df_seuils.head(4)['Variable'].tolist())
+
+        if vars_plot:
+            ncols = min(3, len(vars_plot))
+            nrows = int(np.ceil(len(vars_plot)/ncols))
+            fig, axes = plt.subplots(nrows, ncols,
+                                      figsize=(6*ncols, 4.5*nrows))
+            fig.suptitle(f'Seuils optimaux Youden — {titre}', fontsize=12, fontweight='bold')
+            axes_flat = np.array(axes).flatten() if nrows*ncols > 1 else [axes]
+
+            for ax, var in zip(axes_flat, vars_plot):
+                s    = df_sub[[var,'outcome']].dropna()
+                fpr, tpr, thresholds = roc_curve(s['outcome'], s[var])
+                auc  = roc_auc_score(s['outcome'], s[var])
+                youd = tpr - fpr; bi = np.argmax(youd)
+                sopt = thresholds[bi]
+
+                ax.plot(fpr, tpr, color=couleur, lw=2.5, label=f'AUC={auc:.3f}')
+                ax.plot([0,1],[0,1],'k--',lw=1,alpha=0.4)
+                lbl_ = f'Seuil={sopt:.1f} Sens={tpr[bi]:.2f} Spec={1-fpr[bi]:.2f}'
+                ax.scatter(fpr[bi], tpr[bi], s=120, color='red', zorder=5, label=lbl_)
+
+                # Point seuil BH si disponible
+                if var in seuils_bh_map:
+                    s_bh = seuils_bh_map[var]
+                    try:
+                        s_bin = (s[var] > s_bh).astype(int)
+                        fpr_b = 1 - (s_bin[s['outcome']==0]==0).mean()
+                        tpr_b = (s_bin[s['outcome']==1]==1).mean()
+                        ax.scatter(fpr_b, tpr_b, s=80, color='orange',
+                                   marker='D', zorder=4,
+                                   label=f'Seuil BH={s_bh}')
+                    except Exception: pass
+
+                ax.set_xlabel('1 - Spécificité'); ax.set_ylabel('Sensibilité')
+                ax.set_title(var, fontsize=9, fontweight='bold')
+                ax.legend(fontsize=7, loc='lower right')
+                ax.grid(True, alpha=0.3)
+
+            for ax in axes_flat[len(vars_plot):]:
+                ax.set_visible(False)
+            plt.tight_layout(); plt.show()
+
+        # ── Comparaison seuil optimal vs BH ──────────────────────────────────
+        df_comp = df_seuils[df_seuils['Seuil_BH'] != '—'].copy()
+        if len(df_comp) > 0:
+            fig, ax = plt.subplots(figsize=(max(6, len(df_comp)*1.2), 4))
+            x = range(len(df_comp))
+            opts = df_comp['Seuil_opt'].values
+            bhs  = pd.to_numeric(df_comp['Seuil_BH'], errors='coerce').values
+            ax.scatter(x, opts, color=couleur, s=100, zorder=5,
+                       label='Seuil optimal Youden', marker='o')
+            ax.scatter(x, bhs, color='orange', s=80, zorder=5,
+                       label='Seuil BH Partie 4', marker='D')
+            for i,(o,b) in enumerate(zip(opts, bhs)):
+                if not np.isnan(b):
+                    ax.plot([i,i],[o,b], color='gray', lw=1.5, linestyle='--', alpha=0.5)
+                    if abs(o-b) > 1:
+                        ax.annotate('⚠️', xy=(i, max(o,b)+0.5), ha='center', fontsize=10)
+            ax.set_xticks(range(len(df_comp)))
+            ax.set_xticklabels(df_comp['Variable'].tolist(), rotation=25, ha='right', fontsize=8)
+            ax.set_ylabel('Valeur du seuil')
+            ax.set_title(f'Seuil Youden vs Seuil BH — {titre}', fontweight='bold')
+            ax.legend(fontsize=9); ax.grid(True, axis='y', alpha=0.3)
+            plt.tight_layout(); plt.show()
+
+    return resultats_dict
 
 
 def synthese_comparaison(resultats_dict):
