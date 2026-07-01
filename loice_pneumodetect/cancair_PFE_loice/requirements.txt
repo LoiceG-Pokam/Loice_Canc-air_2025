@@ -1,9 +1,0 @@
-pyrosm
-ipykernel
-jupyter
-notebook
-pandas
-numpy
-matplotlib
-geopandas
-
