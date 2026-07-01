@@ -152,7 +152,7 @@ def charger_icpe(config):
     return icpe, icpe_sh, icpe_sb, icpe_ns
 
 
-def calculer_expositions_icpe(df, icpe_sh, icpe_sb, rayon_m=3000):
+def calculer_expositions_icpe(df, icpe_sh, icpe_sb, rayon_m):
     """
     Calcule pour chaque patient :
       - distance au Seveso SH le plus proche
@@ -172,7 +172,8 @@ def calculer_expositions_icpe(df, icpe_sh, icpe_sb, rayon_m=3000):
 
     # Nombre de SH dans le rayon
     idx_rayon = tree_sh.query_ball_point(coords_patients, r=rayon_m)
-    df['nb_SH_3km'] = [len(idx) for idx in idx_rayon]
+    variable_name = f'nb_SH_{rayon_m//1000}km'
+    df[variable_name] = [len(idx) for idx in idx_rayon]
 
     # Distance au SB le plus proche
     if len(coords_sb) > 0:
@@ -190,8 +191,8 @@ def calculer_expositions_icpe(df, icpe_sh, icpe_sb, rayon_m=3000):
 
     print(f"  dist_SH_m    : médiane={df['dist_SH_m'].median():.0f}m | "
           f"min={df['dist_SH_m'].min():.0f}m | max={df['dist_SH_m'].max():.0f}m")
-    print(f"  nb_SH_3km    : médiane={df['nb_SH_3km'].median():.0f} | "
-          f"max={df['nb_SH_3km'].max():.0f}")
+    print(f"  {variable_name} : médiane={df[variable_name].median():.0f} | "
+          f"max={df[variable_name].max():.0f}")
     print(f"  score_expo_SH: médiane={df['score_expo_SH'].median():.3f}")
 
     return df
@@ -201,7 +202,7 @@ def calculer_expositions_icpe(df, icpe_sh, icpe_sb, rayon_m=3000):
 # ÉTAPE 2 — MATRICE DE POIDS SPATIAUX
 # ─────────────────────────────────────────────────────────────────────────────
 
-def construire_matrice_poids(df, rayon_m=3000, n_permutations=999):
+def construire_matrice_poids(df, rayon_m, n_permutations=999):
     """
     Construit la matrice de poids spatiaux W par rayon fixe.
     Vérifie la connectivité et affiche les statistiques.
@@ -235,7 +236,7 @@ def construire_matrice_poids(df, rayon_m=3000, n_permutations=999):
     ax.hist(n_voisins, bins=30, color='#2E86AB', edgecolor='white', alpha=0.85)
     ax.axvline(np.median(n_voisins), color='red', linestyle='--', lw=2,
                label=f'Médiane = {np.median(n_voisins):.0f}')
-    ax.set_xlabel('Nombre de voisins (rayon 3km)', fontsize=11)
+    ax.set_xlabel(f'Nombre de voisins (rayon {rayon_m//1000}km)', fontsize=11)
     ax.set_ylabel('Nombre de patients', fontsize=11)
     ax.set_title('Distribution du nombre de voisins par patient', fontsize=12, fontweight='bold')
     ax.legend(fontsize=10)

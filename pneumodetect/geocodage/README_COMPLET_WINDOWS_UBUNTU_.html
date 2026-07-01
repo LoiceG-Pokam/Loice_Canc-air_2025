@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guide Complet Addok - Windows vs Ubuntu</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .wrapper {
+            display: flex;
+            max-width: 1400px;
+            margin: 0 auto;
+            gap: 20px;
+        }
+        
+        aside {
+            width: 280px;
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+        }
+        
+        .sidebar {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .sidebar h3 {
+            color: #667eea;
+            font-size: 1.1em;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .sidebar ul {
+            list-style: none;
+        }
+        
+        .sidebar li {
+            margin-bottom: 8px;
+        }
+        
+        .sidebar a {
+            color: #555;
+            text-decoration: none;
+            display: block;
+            padding: 8px 12px;
+            border-radius: 5px;
+            transition: all 0.3s;
+            font-size: 0.9em;
+        }
+        
+        .sidebar a:hover {
+            background: #f0f0f0;
+            color: #667eea;
+            padding-left: 20px;
+        }
+        
+        main {
+            flex: 1;
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        
+        .header {
+            margin-bottom: 40px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 20px;
+        }
+        
+        h1 {
+            color: #667eea;
+            font-size: 2.8em;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 1.15em;
+            font-style: italic;
+        }
+        
+        h2 {
+            color: #667eea;
+            font-size: 1.9em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            border-left: 5px solid #667eea;
+            padding-left: 20px;
+        }
+        
+        h3 {
+            color: #764ba2;
+            font-size: 1.4em;
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+        
+        h4 {
+            color: #555;
+            font-size: 1.15em;
+            margin-top: 20px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: #555;
+        }
+        
+        ul, ol {
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+        
+        li {
+            margin-bottom: 10px;
+            color: #555;
+        }
+        
+        code {
+            background: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #d73a49;
+            font-size: 0.95em;
+        }
+        
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid #667eea;
+            overflow-x: auto;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: #f8f8f2;
+        }
+        
+        .alert {
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border-left: 5px solid;
+            display: flex;
+            gap: 15px;
+        }
+        
+        .alert-info {
+            background: #e3f2fd;
+            border-color: #2196f3;
+            color: #1565c0;
+        }
+        
+        .alert-warning {
+            background: #fff3e0;
+            border-color: #ff9800;
+            color: #e65100;
+        }
+        
+        .alert-success {
+            background: #e8f5e9;
+            border-color: #4caf50;
+            color: #2e7d32;
+        }
+        
+        .alert-danger {
+            background: #ffebee;
+            border-color: #f44336;
+            color: #c62828;
+        }
+        
+        .alert-icon {
+            font-size: 1.5em;
+            flex-shrink: 0;
+        }
+        
+        .step {
+            background: #f9f9f9;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            border-bottom: 2px solid #ddd;
+        }
+        
+        .tab-button {
+            padding: 12px 20px;
+            background: #f5f5f5;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px 5px 0 0;
+            font-weight: bold;
+            color: #667eea;
+            transition: all 0.3s;
+        }
+        
+        .tab-button.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .windows { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); }
+        .ubuntu { background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%); }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            text-align: left;
+        }
+        
+        table td {
+            border-bottom: 1px solid #ddd;
+            padding: 15px;
+        }
+        
+        table tr:hover {
+            background: #f9f9f9;
+        }
+        
+        hr {
+            border: none;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #ddd, transparent);
+            margin: 30px 0;
+        }
+        
+        .checklist {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #4caf50;
+            margin: 20px 0;
+        }
+        
+        .footer {
+            text-align: center;
+            color: #999;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #eee;
+        }
+        
+        @media (max-width: 1024px) {
+            .wrapper {
+                flex-direction: column;
+            }
+            
+            aside {
+                width: 100%;
+                position: relative;
+                top: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <!-- SIDEBAR -->
+        <aside>
+            <div class="sidebar">
+                <h3>📋 Navigation</h3>
+                <ul>
+                    <li><a href="#situation">📍 Situation</a></li>
+                    <li><a href="#choix">🤔 Choisir OS</a></li>
+                    <li><a href="#fichiers">📁 Fichiers</a></li>
+                    <li><a href="#windows">🪟 Windows</a></li>
+                    <li><a href="#ubuntu">🐧 Ubuntu</a></li>
+                    <li><a href="#indexation">⚙️ Indexation</a></li>
+                    <li><a href="#serveur">🚀 Serveur</a></li>
+                    <li><a href="#relance">🔁 Pas la 1ère fois</a></li>
+                    <li><a href="#geocoder">📊 Géocoder</a></li>
+                    <li><a href="#problemes">🛠️ Problèmes</a></li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main>
+            <!-- HEADER -->
+            <div class="header">
+                <h1>🌍 Guide Addok Complet - Windows vs Ubuntu</h1>
+                <p class="subtitle">Installation depuis zéro - Avec filter_ndjson.py inclus</p>
+            </div>
+
+            <!-- SITUATION -->
+            <section id="situation">
+                <h2>📍 Situation de Départ</h2>
+                
+                <div class="checklist">
+                    <strong>✅ Ce que vous avez :</strong><br>
+                    ✔️ Fichiers du projet :<br>
+                    &nbsp;&nbsp;• <code>adresses-addok-france.ndjson.gz</code> (1.3 GB)<br>
+                    &nbsp;&nbsp;• <code>filter_ndjson.py</code> (filtre données)<br>
+                    &nbsp;&nbsp;• <code>chunkcsv.py</code> (géocodage)<br>
+                    &nbsp;&nbsp;• <code>addok.conf</code> (configuration)<br><br>
+                    
+                    <strong>❌ Ce que vous n'avez pas :</strong><br>
+                    ❌ Aucun logiciel (Python, Redis, etc.)<br>
+                    ❌ Aucun système (Windows/Ubuntu uniquement)
+                </div>
+            </section>
+
+            <hr>
+
+            <!-- CHOIX OS -->
+            <section id="choix">
+                <h2>🤔 Choisir entre Windows et Ubuntu</h2>
+
+                <table>
+                    <tr>
+                        <th>Critère</th>
+                        <th>Windows Natif</th>
+                        <th>Ubuntu/WSL</th>
+                    </tr>
+                    <tr>
+                        <td><strong>Installation</strong></td>
+                        <td>Simple (UI graphiques)</td>
+                        <td>Moyen (Terminal)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Stabilité</strong></td>
+                        <td>⚠️ Moins stable</td>
+                        <td>✅ Très stable</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Performances</strong></td>
+                        <td>Correctes</td>
+                        <td>✅ Meilleures</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Indexation ~4h</strong></td>
+                        <td>⚠️ Risque crash</td>
+                        <td>✅ Pas de problèmes</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Commandes simples</strong></td>
+                        <td>Non</td>
+                        <td>✅ Oui</td>
+                    </tr>
+                </table>
+
+                <div class="alert alert-success">
+                    <span class="alert-icon">✅</span>
+                    <div><strong>RECOMMANDÉ : Ubuntu/WSL</strong> - Plus stable pour une indexation de 4 heures</div>
+                </div>
+            </section>
+
+            <hr>
+
+            <!-- FICHIERS -->
+            <section id="fichiers">
+                <h2>📁 Fichiers Fournis</h2>
+
+                <div class="step">
+                    <h4>✅ Vous avez :</h4>
+                    <ul>
+                        <li><strong>adresses-addok-france.ndjson.gz</strong> (1.3 GB) - Base Adresse Nationale complète</li>
+                        <li><strong>filter_ndjson.py</strong> - ⭐ Filtre les lignes invalides (CRITIQUE !)</li>
+                        <li><strong>chunkcsv.py</strong> - Pour géocoder vos fichiers CSV</li>
+                        <li><strong>addok.conf</strong> - Configuration Addok</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-warning">
+                    <span class="alert-icon">⚠️</span>
+                    <div><strong>IMPORTANT :</strong> <code>filter_ndjson.py</code> est ESSENTIEL ! Il nettoie les données avant indexation.</div>
+                </div>
+            </section>
+
+            <hr>
+
+            <!-- WINDOWS -->
+            <section id="windows">
+                <h2>🪟 Installation Windows (Depuis Zéro)</h2>
+
+                <div class="alert alert-info">
+                    <span class="alert-icon">ℹ️</span>
+                    <div>Windows est possible mais moins stable. Ubuntu/WSL est recommandé (voir ci-bas).</div>
+                </div>
+
+                <h3>Étape 0 : Installer Python</h3>
+                <div class="step">
+                    <ol>
+                        <li>Allez sur <strong>https://www.python.org/downloads/</strong></li>
+                        <li>Téléchargez Python 3.9+</li>
+                        <li>⚠️ <strong>COCHEZ : "Add Python to PATH"</strong></li>
+                        <li>Installez</li>
+                    </ol>
+                    <p><strong>Vérifiez :</strong></p>
+                    <pre><code>python --version</code></pre>
+                </div>
+
+                <h3>Étape 1 : Installer Redis</h3>
+                <div class="step">
+                    <ol>
+                        <li>Allez sur <strong>https://github.com/microsoftarchive/redis/releases</strong></li>
+                        <li>Téléchargez <code>Redis-x64-...msi</code></li>
+                        <li>Installez (accepter defaults)</li>
+                    </ol>
+                    <p><strong>Vérifiez :</strong></p>
+                    <pre><code>& "C:\Program Files\Redis\redis-cli.exe" ping</code></pre>
+                    <p>Doit répondre : <code>PONG</code></p>
+                </div>
+
+                <h3>Étape 2 : Copier les Fichiers vers C:\</h3>
+                <div class="step">
+                    <p><strong>Pourquoi C:\ ? </strong> Évite les problèmes réseau avec H:\</p>
+                    <pre><code>mkdir "C:\Users\lpokambo\addok_work"
+
+robocopy "H:\PFE Loice\Notebooks\Loice_Canc-air_2025\loice_pneumodetect\pneumodetect\geocodage\addok_bd" "C:\Users\lpokambo\addok_work" /E /XD venv</code></pre>
+                    
+                    <p>⚠️ <strong>Remplacez</strong> <code>lpokambo</code> par votre utilisateur Windows !</p>
+
+                    <div class="alert alert-danger">
+                        <span class="alert-icon">❌</span>
+                        <div>
+                            <strong>Ne copiez JAMAIS un dossier <code>venv</code> existant !</strong> Sous Windows, un environnement virtuel n'est pas déplaçable : les fichiers <code>Scripts\pip.exe</code>, <code>Scripts\addok.exe</code>, etc. contiennent en dur le <strong>chemin absolu d'origine</strong> (ex. <code>C:\addok_bd\venv\Scripts\python.exe</code>). Si vous copiez ce dossier ailleurs, ces exécutables continueront à chercher Python à l'ancien emplacement, qui n'existe plus — et tout casse silencieusement, avec des erreurs qui semblent aléatoires (<code>ModuleNotFoundError</code>, <code>Fatal error in launcher</code>, etc.). C'est pour ça que <code>/XD venv</code> exclut ce dossier de la copie ci-dessus : on va le <strong>recréer</strong> proprement à l'étape suivante.
+                        </div>
+                    </div>
+
+                    <p><strong>Si vous n'avez pas <code>robocopy</code> ou préférez rester simple, copiez tout puis supprimez le venv copié :</strong></p>
+                    <pre><code>copy "H:\PFE Loice\Notebooks\Loice_Canc-air_2025\loice_pneumodetect\pneumodetect\geocodage\addok_bd\*" "C:\Users\lpokambo\addok_work\"
+Remove-Item -Recurse -Force "C:\Users\lpokambo\addok_work\venv"</code></pre>
+                </div>
+
+                <h3>🔧 Vous avez déjà un venv copié (cassé) ? Réparez-le maintenant</h3>
+                <div class="step">
+                    <div class="alert alert-warning">
+                        <span class="alert-icon">⚠️</span>
+                        <div>Si vous voyez une erreur du type <code>Fatal error in launcher: Unable to create process using '"C:\ancien\chemin\venv\Scripts\python.exe" ...'</code>, votre venv actuel est un venv copié et cassé. Il faut le supprimer et le recréer à l'endroit actuel.</div>
+                    </div>
+                    <pre><code>cd "C:\Users\lpokambo\addok_work"
+
+# Sortez du venv cassé
+deactivate
+
+# Supprimez-le
+Remove-Item -Recurse -Force ".\venv"
+
+# Recréez-le proprement ICI (chemins corrects garantis)
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# Réinstallez les paquets
+.\venv\Scripts\python.exe -m pip install --upgrade pip --trusted-host pypi.org --trusted-host files.pythonhosted.org
+.\venv\Scripts\python.exe -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org addok pyreadline3 pandas requests</code></pre>
+                    <p>Vérifiez que ça fonctionne :</p>
+                    <pre><code>.\venv\Scripts\python.exe -m pip show addok</code></pre>
+                    <p>Vous devriez voir <code>Name: addok</code> sans erreur.</p>
+
+                    <div class="alert alert-warning">
+                        <span class="alert-icon">⚠️</span>
+                        <div><strong>Règle à retenir :</strong> à cause des certificats Zscaler, <strong>toute</strong> commande <code>pip</code> doit inclure <code>--trusted-host pypi.org --trusted-host files.pythonhosted.org</code> — y compris <code>pip install --upgrade pip</code>. Si vous voyez <code>SSL: CERTIFICATE_VERIFY_FAILED</code>, c'est que ces flags manquent sur la commande que vous venez de taper.</div>
+                    </div>
+                </div>
+
+                <h3>Étape 3 : Créer venv et Installer Addok</h3>
+                <div class="step">
+                    <p style="font-size: 0.85em; color: #888;">💡 Si vous avez suivi l'Étape 2 correctement (sans copier <code>venv</code>), cette étape crée un venv neuf et fonctionnel dès le départ — pas de risque de chemins cassés.</p>
+                    <pre><code>cd "C:\Users\lpokambo\addok_work"
+
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+.\venv\Scripts\python.exe -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org addok pyreadline3</code></pre>
+
+                    <div class="alert alert-info">
+                        <span class="alert-icon">ℹ️</span>
+                        <div><strong>Pourquoi <code>pyreadline3</code> ?</strong> Addok essaie d'importer le module <code>readline</code> au démarrage (normalement présent sur Mac/Linux). Ce module n'existe pas du tout sur Windows, et sans compatibilité, <code>addok</code> plante avant même de démarrer (<code>batch</code> comme <code>serve</code>). <code>pyreadline3</code> fournit cette compatibilité — installez-le systématiquement sur Windows, en même temps qu'addok.</div>
+                    </div>
+                </div>
+
+                <h3>Étape 4 : Indexation avec filter_ndjson.py</h3>
+                <div class="step">
+                    <p><strong>Créez</strong> <code>index.py</code> :</p>
+                    <pre><code>import gzip
+import os
+import subprocess
+import sys
+
+FILE_PATH = "adresses-addok-france.ndjson.gz"
+
+# Chemin direct vers l'exe addok du venv (pas de "-m", pas de PATH)
+ADDOK_EXE = os.path.join(os.path.dirname(sys.executable), "addok.exe")
+
+print("🚀 Indexation avec filter_ndjson.py...")
+
+with gzip.open(FILE_PATH, 'rb') as f_in:
+    # Lancer filter_ndjson.py → addok batch
+    proc_filter = subprocess.Popen(
+        [sys.executable, "filter_ndjson.py"],
+        stdin=f_in,
+        stdout=subprocess.PIPE,
+        bufsize=65536
+    )
+    
+    proc_batch = subprocess.Popen(
+        [ADDOK_EXE, "batch"],   # ⭐ appelle directement l'exe du venv, aucune ambiguïté possible
+        stdin=proc_filter.stdout,
+        bufsize=65536
+    )
+    
+    proc_batch.wait()
+
+# On vérifie vraiment le code de sortie avant d'annoncer un succès
+if proc_batch.returncode != 0:
+    print(f"❌ Indexation ÉCHOUÉE (code {proc_batch.returncode}). Regardez le message d'erreur ci-dessus.")
+    sys.exit(proc_batch.returncode)
+
+print("✅ Indexation terminée !")</code></pre>
+                    
+                    <p><strong>Puis lancez :</strong></p>
+                    <pre><code>python index.py</code></pre>
+
+                    <div class="alert alert-warning">
+                        <span class="alert-icon">⚠️</span>
+                        <div><strong>Pourquoi pas <code>python -m addok</code> ?</strong> Le paquet <code>addok</code> n'a pas de fichier <code>__main__.py</code>, donc <code>-m addok</code> échoue toujours avec <code>'addok' is a package and cannot be directly executed</code> — quel que soit l'environnement, même quand addok est correctement installé. Il faut appeler l'exécutable <code>addok.exe</code> généré dans <code>venv\Scripts\</code>, pas le module Python.</div>
+                    </div>
+                </div>
+
+                <h3>⚠️ Erreur fréquente : addok "introuvable" ou "not found"</h3>
+                <div class="step">
+                    <div class="alert alert-danger">
+                        <span class="alert-icon">❌</span>
+                        <div>
+                            Si votre prompt affiche <code>(venv) (base) PS ...</code>, deux environnements Python sont actifs en même temps (votre <code>venv</code> ET l'environnement <code>base</code> d'Anaconda). Selon l'ordre du PATH, la commande <code>addok</code> tapée seule peut alors se résoudre vers l'exécutable d'Anaconda au lieu de celui de votre <code>venv</code> — même si venv est bien activé.
+                        </div>
+                    </div>
+
+                    <p><strong>🔍 Pour confirmer le conflit :</strong></p>
+                    <pre><code>Get-Command addok -All</code></pre>
+                    <p>Si plusieurs lignes apparaissent, c'est confirmé : il existe plusieurs <code>addok.exe</code> visibles depuis ce terminal.</p>
+
+                    <p><strong>✅ Solution définitive : appelez toujours l'exécutable du venv par son chemin complet</strong></p>
+                    <pre><code># Au lieu de :
+addok batch
+addok serve
+
+# Utilisez toujours :
+.\venv\Scripts\addok.exe batch
+.\venv\Scripts\addok.exe serve</code></pre>
+                    <p>Cette méthode fonctionne <strong>toujours</strong>, peu importe le PATH ou les conflits avec Anaconda, car elle ne fait aucune recherche dans PATH : elle exécute directement le fichier du venv.</p>
+
+                    <div class="alert alert-warning">
+                        <span class="alert-icon">⚠️</span>
+                        <div><strong>Pourquoi pas <code>python -m addok</code> ?</strong> Ça semble logique, mais ça ne fonctionne <strong>jamais</strong> avec addok : le paquet n'a pas de fichier <code>__main__.py</code>, donc Python répond <code>'addok' is a package and cannot be directly executed</code>, même quand addok est parfaitement installé. La seule commande qui fonctionne est l'exécutable <code>addok.exe</code> lui-même.</div>
+                    </div>
+
+                    <p><strong>✅ Complément : désactivez Anaconda pour un terminal propre</strong></p>
+                    <pre><code>conda deactivate
+.\venv\Scripts\Activate.ps1</code></pre>
+                    <p>Votre prompt doit ensuite afficher uniquement <code>(venv) PS ...</code>, sans <code>(base)</code>. Ce n'est pas obligatoire si vous utilisez le chemin complet vers <code>addok.exe</code>, mais ça évite bien d'autres confusions.</p>
+
+                    <div class="alert alert-info">
+                        <span class="alert-icon">ℹ️</span>
+                        <div>Le script <code>index.py</code> ci-dessus est déjà corrigé pour appeler <code>venv\Scripts\addok.exe</code> directement — c'est ce qui évite le problème dès le départ.</div>
+                    </div>
+
+                    <p><strong>Si <code>pip show addok</code> ne trouve rien dans le venv :</strong></p>
+                    <p>C'est le même conflit, côté <code>pip</code> cette fois : <code>pip install addok</code> a pu s'exécuter avec le pip d'Anaconda. Vérifiez et réinstallez en forçant le pip du venv :</p>
+                    <pre><code># Vérifier
+.\venv\Scripts\python.exe -m pip show addok
+
+# Réinstaller si absent
+.\venv\Scripts\python.exe -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org addok</code></pre>
+                </div>
+
+                <h3>Étape 5 : Lancer le Serveur</h3>
+                <div class="step">
+                    <pre><code>.\venv\Scripts\addok.exe serve</code></pre>
+                    <p>Allez à : <strong>http://localhost:7878</strong></p>
+                    <p style="font-size: 0.85em; color: #888;">💡 On appelle l'exe du venv directement (pas <code>-m addok</code>, qui ne fonctionne jamais — voir ci-dessus), et par chemin complet plutôt que <code>addok serve</code> seul, pour éviter tout conflit avec Anaconda.</p>
+                </div>
+
+                <div class="alert alert-info">
+                    <span class="alert-icon">📓</span>
+                    <div><strong>Serveur opérationnel ?</strong> Ouvrez le notebook <code>.ipynb</code> fourni avec le projet pour lancer le géocodage en masse de vos fichiers CSV.</div>
+                </div>
+            </section>
+
+            <hr>
+
+            <!-- UBUNTU -->
+            <section id="ubuntu">
+                <h2>🐧 Installation Ubuntu/WSL (RECOMMANDÉ)</h2>
+
+                <div class="alert alert-success">
+                    <span class="alert-icon">✅</span>
+                    <div><strong>PLUS STABLE</strong> - Les commandes simples fonctionnent et aucun problème fork/multiprocessing.</div>
+                </div>
+
+                <h3>Étape 0 : Installer Ubuntu/WSL</h3>
+                <div class="step">
+                    <p><strong>PowerShell Administrateur :</strong></p>
+                    <pre><code>wsl --install -d Ubuntu
+
+# Redémarrez Windows
+# Puis lancez Ubuntu</code></pre>
+                </div>
+
+                <h3>Étape 1 : Installer Redis</h3>
+                <div class="step">
+                    <p><strong>Dans Ubuntu :</strong></p>
+                    <pre><code>sudo apt update
+sudo apt install redis-server -y
+
+# Démarrer Redis
+redis-server --daemonize yes
+
+# Vérifier
+redis-cli ping</code></pre>
+                    <p>Doit répondre : <code>PONG</code></p>
+                </div>
+
+                <h3>Étape 2 : Créer Dossier de Travail</h3>
+                <div class="step">
+                    <p><strong>Option A : Sur C: (Windows)</strong></p>
+                    <pre><code>mkdir -p /mnt/c/Users/lpokambo/addok_work
+cd /mnt/c/Users/lpokambo/addok_work</code></pre>
+
+                    <p><strong>Option B : Sur Linux (recommandé)</strong></p>
+                    <pre><code>mkdir -p ~/addok_work
+cd ~/addok_work</code></pre>
+                </div>
+
+                <h3>Étape 3 : Copier les Fichiers</h3>
+                <div class="step">
+                    <p><strong>Si sur C: (accessible via /mnt/h/)</strong></p>
+                    <pre><code>cp /mnt/h/PFE\ Loice/Notebooks/Loice_Canc-air_2025/loice_pneumodetect/pneumodetect/geocodage/addok_bd/* .</code></pre>
+
+                    <p><strong>Ou si sur H: en partage réseau :</strong></p>
+                    <pre><code>cp -r /mnt/h/PFE\ Loice/.../* .</code></pre>
+
+                    <p><strong>Vérifiez :</strong></p>
+                    <pre><code>ls -la | grep addok</code></pre>
+                </div>
+
+                <h3>Étape 4 : Installer Python et Addok</h3>
+                <div class="step">
+                    <pre><code>sudo apt install python3 python3-pip python3-venv -y
+
+python3 -m venv venv
+source venv/bin/activate
+
+pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org addok pandas requests</code></pre>
+                    <div class="alert alert-info">
+                        <span class="alert-icon">ℹ️</span>
+                        <div>Sous Ubuntu, il n'y a en général pas de conflit Anaconda/venv comme sous Windows, mais si vous utilisez aussi conda ici, appliquez le même réflexe : lancez <code>python -m addok ...</code> plutôt que <code>addok ...</code> en cas de doute.</div>
+                    </div>
+                </div>
+
+                <h3>Étape 5 : Indexation - LA COMMANDE SIMPLE !</h3>
+                <div class="step">
+                    <p><strong>C'est EXACTEMENT comme le README original :</strong></p>
+                    <pre><code>gzip -cd adresses-addok-france.ndjson.gz | python3 filter_ndjson.py | addok batch</code></pre>
+
+                    <p>⏳ <strong>Durée : ~4 heures</strong></p>
+                    <p>✅ <strong>NE FERMEZ PAS le terminal !</strong></p>
+                </div>
+
+                <h3>Étape 6 : Lancer le Serveur</h3>
+                <div class="step">
+                    <p><strong>Dans un nouveau terminal Ubuntu :</strong></p>
+                    <pre><code>cd ~/addok_work  # ou /mnt/c/...
+source venv/bin/activate
+addok serve</code></pre>
+                    <p>Allez à : <strong>http://localhost:7878</strong></p>
+                </div>
+
+                <div class="alert alert-info">
+                    <span class="alert-icon">📓</span>
+                    <div><strong>Serveur opérationnel ?</strong> Ouvrez le notebook <code>.ipynb</code> fourni avec le projet pour lancer le géocodage en masse de vos fichiers CSV.</div>
+                </div>
+            </section>
+
+            <hr>
+
+            <!-- INDEXATION DETAILS -->
+            <section id="indexation">
+                <h2>⚙️ Comprendre l'Indexation</h2>
+
+                <h3>Pourquoi filter_ndjson.py ?</h3>
+                <div class="step">
+                    <p>Le fichier <code>adresses-addok-france.ndjson.gz</code> contient ~27 millions d'adresses, mais :</p>
+                    <ul>
+                        <li>⚠️ Certaines lignes sont corrompues</li>
+                        <li>⚠️ Certaines manquent des champs obligatoires</li>
+                        <li>⚠️ Certaines ne sont pas du JSON valide</li>
+                    </ul>
+                    
+                    <p><code>filter_ndjson.py</code> :</p>
+                    <ul>
+                        <li>✅ Vérifie que chaque ligne est du JSON valide</li>
+                        <li>✅ Filtre les adresses sans "name" (champ obligatoire)</li>
+                        <li>✅ Laisse passer seulement les bonnes données</li>
+                    </ul>
+                </div>
+
+                <h3>Pipeline d'Indexation</h3>
+                <div class="step">
+                    <pre><code>gzip -cd fichier.gz → filter_ndjson.py → addok batch
+    ↓                     ↓                    ↓
+Décompresse        Filtre les bonnes    Indexe dans Redis
+    données          adresses            (~27M)</code></pre>
+                </div>
+            </section>
+
+            <hr>
+
+            <!-- SERVEUR -->
+            <section id="serveur">
+                <h2>🚀 Serveur Addok</h2>
+
+                <h3>Lancer le Serveur</h3>
+                <div class="step">
+                    <p><strong>Windows :</strong></p>
+                    <pre><code>cd "C:\Users\lpokambo\addok_work"
+.\venv\Scripts\Activate.ps1
+.\venv\Scripts\addok.exe serve</code></pre>
+                    <p style="font-size: 0.85em; color: #888;">💡 Sous Windows, appelez toujours <code>.\venv\Scripts\addok.exe</code> directement (jamais <code>-m addok</code>, qui ne fonctionne pas — voir la section "Erreur fréquente" plus haut) plutôt que <code>addok serve</code> seul si Anaconda est aussi installé.</p>
+
+                    <p><strong>Ubuntu :</strong></p>
+                    <pre><code>cd ~/addok_work
+source venv/bin/activate
+addok serve</code></pre>
+                </div>
+
+                <h3>Tester</h3>
+                <div class="step">
+                    <p>Ouvrez navigateur :</p>
+                    <pre><code>http://localhost:7878</code></pre>
+
+                    <p>Testez une recherche :</p>
+                    <pre><code>http://localhost:7878/search?q=5+avenue+de+paris+lyon</code></pre>
+
+                    <p>✅ Vous devriez voir les adresses en JSON !</p>
+                </div>
+
+                <div class="alert alert-info">
+                    <span class="alert-icon">📓</span>
+                    <div><strong>Ça fonctionne ?</strong> Ouvrez le notebook <code>.ipynb</code> fourni avec le projet pour lancer le géocodage en masse de vos fichiers CSV.</div>
+                </div>
+            </section>
+
+            <hr>
+
+            <!-- RELANCE / PAS LA PREMIERE FOIS -->
+            <section id="relance">
+                <h2>🔁 Ce n'est pas la première fois ?</h2>
+
+                <div class="alert alert-success">
+                    <span class="alert-icon">✅</span>
+                    <div><strong>Bonne nouvelle :</strong> l'indexation (~4h) ne se refait <strong>jamais</strong>. Une fois l'index créé, il reste sur votre disque (dossier <code>addok_index_idf/</code> ou données Redis). Vous n'avez plus qu'à relancer Redis et le serveur, ce qui prend quelques secondes.</div>
+                </div>
+
+                <h3>🪟 Windows</h3>
+                <div class="step">
+                    <pre><code>cd "C:\Users\lpokambo\addok_work"
+.\venv\Scripts\Activate.ps1
+
+# Vérifiez que Redis tourne (Services.msc), sinon démarrez-le
+
+# Lancez le serveur (exe direct = pas de conflit Anaconda, "-m addok" ne marche pas)
+.\venv\Scripts\addok.exe serve</code></pre>
+                    <p>Allez à : <strong>http://localhost:7878</strong></p>
+                </div>
+
+                <h3>🐧 Ubuntu / WSL</h3>
+                <div class="step">
+                    <pre><code>cd ~/addok_work   # ou /mnt/c/Users/lpokambo/addok_work
+source venv/bin/activate
+
+# Démarrer Redis si besoin
+redis-cli ping || redis-server --daemonize yes
+
+# Lancer le serveur
+addok serve</code></pre>
+                    <p>Allez à : <strong>http://localhost:7878</strong></p>
+                </div>
+
+                <p>⏱️ <strong>Durée :</strong> ~20 secondes (au lieu de 4 heures !)</p>
+
+                <div class="alert alert-info">
+                    <span class="alert-icon">📓</span>
+                    <div><strong>Serveur reparti ?</strong> Ouvrez directement le notebook <code>.ipynb</code> fourni avec le projet pour géocoder vos fichiers en masse — pas besoin de retoucher à l'indexation.</div>
+                </div>
+            </section>
+
+            <hr>
+
+            <!-- GEOCODER -->
+            <section id="geocoder">
+                <h2>📊 Géocoder vos Fichiers</h2>
+
+                <div class="alert alert-info">
+                    <span class="alert-icon">📓</span>
+                    <div>Le moyen le plus simple pour géocoder en masse : ouvrez le fichier notebook <code>.ipynb</code> fourni avec le projet. Il utilise déjà <code>chunkcsv.py</code> et est prêt à l'emploi dès que le serveur Addok tourne sur <code>http://localhost:7878</code>.</div>
+                </div>
+
+                <h3>Préparation du fichier CSV</h3>
+                <div class="step">
+                    <p><strong>Format attendu (séparateur <code>;</code>) :</strong></p>
+                    <pre><code>adresse;code_postal;commune
+5 avenue de paris;69003;Lyon
+10 rue de la paix;75000;Paris</code></pre>
+                </div>
+
+                <h3>Script de Géocodage</h3>
+                <div class="step">
+                    <p><strong>Utilisez chunkcsv.py :</strong></p>
+                    <pre><code>from chunkcsv import geocode
+
+columns = {
+    'columns': ['adresse', 'code_postal', 'commune']
+}
+
+geocode(
+    filepath_in='mes_adresses.csv',
+    columns=columns,
+    filepath_out='mes_adresses_geocodees.csv'
+)</code></pre>
+
+                    <p><strong>Résultat :</strong> CSV avec colonnes lon/lat/score ajoutées</p>
+                </div>
+            </section>
+
+            <hr>
+
+            <!-- PROBLEMES -->
+            <section id="problemes">
+                <h2>🛠️ Dépannage</h2>
+
+                <div class="step">
+                    <h4>❌ "Fatal error in launcher: Unable to create process using '...\ancien\chemin\venv\Scripts\python.exe' ..."</h4>
+                    <p><strong>Cause :</strong> Votre <code>venv</code> a été <strong>copié</strong> depuis un autre dossier. Sous Windows, les exécutables d'un venv (<code>pip.exe</code>, <code>addok.exe</code>...) contiennent en dur le chemin absolu d'origine — un venv copié est un venv cassé.</p>
+                    <p><strong>Solution :</strong> Supprimez le venv copié et recréez-le sur place : <code>Remove-Item -Recurse -Force .\venv</code> puis <code>python -m venv venv</code> et réinstallez les paquets. Voir la section "Réparez-le maintenant" dans l'installation Windows.</p>
+                </div>
+
+                <div class="step">
+                    <h4>❌ "ModuleNotFoundError: No module named 'addok'" (avec la commande <code>addok</code> seule)</h4>
+                    <p><strong>Cause :</strong> Prompt <code>(venv) (base) PS ...</code> — Anaconda et venv sont actifs en même temps, et la commande <code>addok</code> pointe vers l'exécutable d'Anaconda plutôt que celui du venv.</p>
+                    <p><strong>Solution :</strong> Appelez toujours <code>.\venv\Scripts\addok.exe batch</code> / <code>serve</code> par son chemin complet, au lieu de <code>addok batch</code> / <code>serve</code> ou de <code>python -m addok</code> (qui ne fonctionne jamais, addok n'a pas de <code>__main__.py</code>).</p>
+                </div>
+
+                <div class="step">
+                    <h4>❌ "...\venv\Scripts\python.exe: No module named addok" (avec <code>python -m addok</code>)</h4>
+                    <p><strong>Cause :</strong> addok n'est pas installé dans le venv — le <code>pip install addok</code> initial a probablement été exécuté avec le <code>pip</code> d'Anaconda au lieu de celui du venv, donc addok a été installé dans <code>(base)</code>, pas dans <code>venv</code>.</p>
+                    <p><strong>Solution :</strong> Vérifiez avec <code>.\venv\Scripts\python.exe -m pip show addok</code>, puis réinstallez en forçant le venv : <code>.\venv\Scripts\python.exe -m pip install addok</code> — voir la section "Erreur fréquente" dans l'installation Windows pour le détail.</p>
+                </div>
+
+                <div class="step">
+                    <h4>❌ "No module named addok.__main__; 'addok' is a package and cannot be directly executed"</h4>
+                    <p><strong>Cause :</strong> Vous avez utilisé <code>python -m addok ...</code>. Le paquet <code>addok</code> n'a pas de fichier <code>__main__.py</code>, donc <code>-m addok</code> échoue <strong>toujours</strong>, même quand addok est parfaitement installé dans le venv.</p>
+                    <p><strong>Solution :</strong> N'utilisez jamais <code>-m addok</code>. Appelez l'exécutable directement : <code>.\venv\Scripts\addok.exe batch</code> ou <code>.\venv\Scripts\addok.exe serve</code>. Dans <code>index.py</code>, utilisez <code>os.path.join(os.path.dirname(sys.executable), "addok.exe")</code>.</p>
+                </div>
+
+                <div class="step">
+                    <h4>❌ "SSL: CERTIFICATE_VERIFY_FAILED" sur une commande <code>pip</code></h4>
+                    <p><strong>Cause :</strong> Les certificats Zscaler bloquent la connexion HTTPS normale de pip. Ça arrive sur <strong>n'importe quelle</strong> commande pip, pas seulement l'installation d'addok — par exemple <code>pip install --upgrade pip</code> oublié sans les bons flags.</p>
+                    <p><strong>Solution :</strong> Ajoutez toujours <code>--trusted-host pypi.org --trusted-host files.pythonhosted.org</code> à la fin de la commande pip concernée, puis relancez-la.</p>
+                </div>
+
+
+                    <p><strong>Cause :</strong> Script incompatible avec cette version d'Addok</p>
+                    <p><strong>Solution :</strong> Utilisez la commande simple avec filter_ndjson.py (voir ci-haut)</p>
+                </div>
+
+                <div class="step">
+                    <h4>❌ "ValueError: cannot find context for 'fork'"</h4>
+                    <p><strong>Cause :</strong> Windows n'a pas fork() - problème multiprocessing</p>
+                    <p><strong>Solution :</strong> Utilisez Ubuntu/WSL à la place</p>
+                </div>
+
+                <div class="step">
+                    <h4>❌ "ModuleNotFoundError: No module named 'readline'" (avec traceback, addok plante)</h4>
+                    <p><strong>Cause :</strong> Le module <code>readline</code> n'existe pas sur Windows (Mac/Linux uniquement), et addok en a besoin dès le chargement de sa configuration. Sur Windows, ce n'est <strong>pas</strong> une erreur cosmétique : <code>addok batch</code> et <code>addok serve</code> plantent complètement sans compatibilité.</p>
+                    <p><strong>Solution :</strong> <code>.\venv\Scripts\python.exe -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org pyreadline3</code>, puis relancez la commande.</p>
+                </div>
+
+                <div class="step">
+                    <h4>❌ "Connection refused" Redis</h4>
+                    <p><strong>Cause :</strong> Redis n'est pas en cours d'exécution</p>
+                    <p><strong>Solutions :</strong></p>
+                    <ul>
+                        <li><strong>Windows :</strong> Ouvrez Services (services.msc) et démarrez Redis</li>
+                        <li><strong>Ubuntu :</strong> <code>redis-server --daemonize yes</code></li>
+                    </ul>
+                </div>
+
+                <div class="step">
+                    <h4>❌ "Indexation s'arrête après 90 secondes"</h4>
+                    <p><strong>Cause :</strong> Manque de mémoire</p>
+                    <p><strong>Solution :</strong> Redémarrez, fermez autres applications, relancez (reprise auto)</p>
+                </div>
+            </section>
+
+            <hr>
+
+            <div class="footer">
+                <p>🎉 <strong>Guide Complet - Windows & Ubuntu Supportés !</strong></p>
+                <p style="font-size: 0.9em; margin-top: 10px;">Avec filter_ndjson.py inclus - Données nettoyées automatiquement</p>
+                <p style="font-size: 0.85em; margin-top: 10px; color: #999;">Ubuntu/WSL recommandé pour stabilité (4 heures sans crash)</p>
+                <p style="font-size: 0.85em; margin-top: 10px; color: #999;">📓 Une fois le serveur opérationnel, ouvrez le notebook .ipynb pour géocoder vos fichiers en masse</p>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
