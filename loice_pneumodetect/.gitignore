@@ -1,0 +1,39 @@
+# ── Données patients & confidentielles (RGPD) ──────────────────────────────
+data/
+excels/
+Data/
+
+# ── Geocodage (BAN volumineuse) ─────────────────────────────────────────────
+geocodage/ban_idf/
+pneumodetect/geocodage/
+
+# ── Données géospatiales patients (RGPD) ────────────────────────────────────
+projet_qgis/
+
+# ── Environnements virtuels ─────────────────────────────────────────────────
+**/venv*/
+**/venv2/
+Notebooks/addok_bd/
+
+# ── Littérature & archives privées ─────────────────────────────────────────
+litterature/
+archives/
+
+# ── Outputs HTML générés ────────────────────────────────────────────────────
+pneumodetect/html/
+
+# ── Tokens & accès ──────────────────────────────────────────────────────────
+token_lungcancair/
+
+# ── Cache Python ────────────────────────────────────────────────────────────
+**/__pycache__/
+*.pyc
+
+# ── Fichiers temporaires ────────────────────────────────────────────────────
+Thumbs.db
+~$*.xlsx
+~$*.docx
+*.tmp
+
+# ── Checkpoints Jupyter ─────────────────────────────────────────────────────
+**/.ipynb_checkpoints/

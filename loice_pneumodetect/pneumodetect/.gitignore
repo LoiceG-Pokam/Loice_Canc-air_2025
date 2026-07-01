@@ -1,0 +1,20 @@
+# Ignore checkpoints
+.ipynb_checkpoints/
+
+figures/
+
+# Ignore IRIS file 
+data/socioeco/IRIS
+
+# Ignore data files
+data/outputs/
+
+# Ignore biased ref data 
+data/reference/ref_biaised
+data/reference/ref_biaised_geocoded
+data/reference/ref_chunked
+data/reference/ref_chunked_geocoded
+
+
+
+

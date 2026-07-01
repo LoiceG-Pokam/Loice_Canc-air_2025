@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test du Chi² - Clusters et Mortalité</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.2em;
+        }
+        h2 {
+            color: #34495e;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-top: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: center;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.9em;
+            letter-spacing: 0.5px;
+        }
+        tr:hover {
+            background-color: #f8f9fa;
+            transform: translateY(-1px);
+            transition: all 0.3s ease;
+        }
+        .highlight {
+            background-color: #e8f5e8;
+            font-weight: bold;
+        }
+        .critical {
+            background-color: #ffe6e6;
+            color: #d63031;
+            font-weight: bold;
+        }
+        .result-box {
+            background: linear-gradient(135deg, #74b9ff, #0984e3);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .formula {
+            background: #f8f9fa;
+            padding: 15px;
+            border-left: 4px solid #3498db;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1em;
+            margin: 10px;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .interpretation {
+            background: #f1f2f6;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 5px solid #2ecc71;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Test du Chi² - Association Clusters et Mortalité</h1>
+        
+        <h2>1. Tableau de Contingence (Observé)</h2>
+        <table id="observedTable">
+            <thead>
+                <tr>
+                    <th>Cluster</th>
+                    <th>Décédés</th>
+                    <th>Survivants</th>
+                    <th>Total</th>
+                    <th>Taux de décès (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>1</strong></td>
+                    <td>1322</td>
+                    <td>9824</td>
+                    <td>11146</td>
+                    <td class="highlight">11.86%</td>
+                </tr>
+                <tr>
+                    <td><strong>2</strong></td>
+                    <td>726</td>
+                    <td>7037</td>
+                    <td>7763</td>
+                    <td class="highlight">9.35%</td>
+                </tr>
+                <tr>
+                    <td><strong>3</strong></td>
+                    <td>1872</td>
+                    <td>22947</td>
+                    <td>24819</td>
+                    <td class="highlight">7.54%</td>
+                </tr>
+                <tr>
+                    <td><strong>4</strong></td>
+                    <td>70</td>
+                    <td>470</td>
+                    <td>540</td>
+                    <td class="critical">12.96%</td>
+                </tr>
+                <tr style="background: #34495e; color: white; font-weight: bold;">
+                    <td><strong>Total</strong></td>
+                    <td>3990</td>
+                    <td>40278</td>
+                    <td>44268</td>
+                    <td>9.01%</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>2. Calcul des Effectifs Attendus</h2>
+        <div class="formula">
+            <strong>Formule :</strong> Effectif attendu = (Total ligne × Total colonne) / Total général
+        </div>
+        
+        <table id="expectedTable">
+            <thead>
+                <tr>
+                    <th>Cluster</th>
+                    <th>Décédés attendus</th>
+                    <th>Survivants attendus</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody id="expectedBody">
+                <!-- Sera rempli par JavaScript -->
+            </tbody>
+        </table>
+
+        <h2>3. Calcul du Chi²</h2>
+        <div class="formula">
+            <strong>Formule :</strong> χ² = Σ [(Observé - Attendu)² / Attendu]
+        </div>
+        
+        <table id="chiTable">
+            <thead>
+                <tr>
+                    <th>Cellule</th>
+                    <th>Observé (O)</th>
+                    <th>Attendu (E)</th>
+                    <th>(O-E)²</th>
+                    <th>(O-E)²/E</th>
+                </tr>
+            </thead>
+            <tbody id="chiBody">
+                <!-- Sera rempli par JavaScript -->
+            </tbody>
+        </table>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="chiValue">--</div>
+                <div class="stat-label">Chi² calculé</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="dfValue">3</div>
+                <div class="stat-label">Degrés de liberté</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="pValue">--</div>
+                <div class="stat-label">Valeur p (approx.)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="criticalValue">7.815</div>
+                <div class="stat-label">Valeur critique (α=0.05)</div>
+            </div>
+        </div>
+
+        <button onclick="calculateChi2()">🔢 Calculer le Chi²</button>
+        <button onclick="showInterpretation()">📋 Interprétation</button>
+
+        <div id="result" class="result-box" style="display: none;"></div>
+        <div id="interpretation" class="interpretation" style="display: none;"></div>
+    </div>
+
+    <script>
+        // Données observées
+        const observed = {
+            cluster1: {deceased: 1322, survivors: 9824, total: 11146},
+            cluster2: {deceased: 726, survivors: 7037, total: 7763},
+            cluster3: {deceased: 1872, survivors: 22947, total: 24819},
+            cluster4: {deceased: 70, survivors: 470, total: 540}
+        };
+
+        const totals = {
+            deceased: 3990,
+            survivors: 40278,
+            total: 44268
+        };
+
+        function calculateExpected() {
+            const expected = {};
+            for (let cluster in observed) {
+                expected[cluster] = {
+                    deceased: (observed[cluster].total * totals.deceased) / totals.total,
+                    survivors: (observed[cluster].total * totals.survivors) / totals.total
+                };
+            }
+            return expected;
+        }
+
+        function displayExpected(expected) {
+            const tbody = document.getElementById('expectedBody');
+            tbody.innerHTML = '';
+            
+            let clusterNum = 1;
+            for (let cluster in expected) {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td><strong>${clusterNum}</strong></td>
+                    <td>${expected[cluster].deceased.toFixed(2)}</td>
+                    <td>${expected[cluster].survivors.toFixed(2)}</td>
+                    <td>${observed[cluster].total}</td>
+                `;
+                clusterNum++;
+            }
+        }
+
+        function calculateChi2() {
+            const expected = calculateExpected();
+            displayExpected(expected);
+            
+            let chi2 = 0;
+            const tbody = document.getElementById('chiBody');
+            tbody.innerHTML = '';
+            
+            let clusterNum = 1;
+            for (let cluster in observed) {
+                // Pour les décédés
+                const obsDeceased = observed[cluster].deceased;
+                const expDeceased = expected[cluster].deceased;
+                const chi2Deceased = Math.pow(obsDeceased - expDeceased, 2) / expDeceased;
+                chi2 += chi2Deceased;
+                
+                const row1 = tbody.insertRow();
+                row1.innerHTML = `
+                    <td>Cluster ${clusterNum} - Décédés</td>
+                    <td>${obsDeceased}</td>
+                    <td>${expDeceased.toFixed(2)}</td>
+                    <td>${Math.pow(obsDeceased - expDeceased, 2).toFixed(2)}</td>
+                    <td>${chi2Deceased.toFixed(4)}</td>
+                `;
+                
+                // Pour les survivants
+                const obsSurvivors = observed[cluster].survivors;
+                const expSurvivors = expected[cluster].survivors;
+                const chi2Survivors = Math.pow(obsSurvivors - expSurvivors, 2) / expSurvivors;
+                chi2 += chi2Survivors;
+                
+                const row2 = tbody.insertRow();
+                row2.innerHTML = `
+                    <td>Cluster ${clusterNum} - Survivants</td>
+                    <td>${obsSurvivors}</td>
+                    <td>${expSurvivors.toFixed(2)}</td>
+                    <td>${Math.pow(obsSurvivors - expSurvivors, 2).toFixed(2)}</td>
+                    <td>${chi2Survivors.toFixed(4)}</td>
+                `;
+                
+                clusterNum++;
+            }
+            
+            // Afficher les résultats
+            document.getElementById('chiValue').textContent = chi2.toFixed(4);
+            
+            // Approximation de la p-value (très approximative pour df=3)
+            let pValue = '';
+            if (chi2 > 16.266) pValue = '< 0.001';
+            else if (chi2 > 11.345) pValue = '< 0.01';
+            else if (chi2 > 7.815) pValue = '< 0.05';
+            else pValue = '> 0.05';
+            
+            document.getElementById('pValue').textContent = pValue;
+            
+            // Résultat
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            
+            if (chi2 > 7.815) {
+                resultDiv.innerHTML = `
+                    <h3>🎯 RÉSULTAT SIGNIFICATIF</h3>
+                    <p><strong>Chi² = ${chi2.toFixed(4)} > 7.815 (valeur critique)</strong></p>
+                    <p>Il existe une <strong>association significative</strong> entre les clusters et la mortalité (p ${pValue})</p>
+                    <p>❌ On rejette H₀ : Les taux de mortalité ne sont PAS identiques entre les clusters</p>
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    <h3>❌ RÉSULTAT NON SIGNIFICATIF</h3>
+                    <p><strong>Chi² = ${chi2.toFixed(4)} ≤ 7.815 (valeur critique)</strong></p>
+                    <p>Pas d'association significative entre les clusters et la mortalité (p ${pValue})</p>
+                    <p>✅ On accepte H₀ : Les taux de mortalité sont similaires entre les clusters</p>
+                `;
+            }
+        }
+
+        function showInterpretation() {
+            const interpretationDiv = document.getElementById('interpretation');
+            interpretationDiv.style.display = 'block';
+            interpretationDiv.innerHTML = `
+                <h3>📖 Interprétation des Résultats</h3>
+                
+                <h4>🎯 Hypothèses testées :</h4>
+                <p><strong>H₀ :</strong> Il n'y a pas d'association entre les clusters et la mortalité (les taux de décès sont identiques)</p>
+                <p><strong>H₁ :</strong> Il existe une association entre les clusters et la mortalité (les taux de décès diffèrent)</p>
+                
+                <h4>📊 Observations importantes :</h4>
+                <ul>
+                    <li><strong>Cluster 4 :</strong> Taux de mortalité le plus élevé (12.96%) mais petit effectif (540 patients)</li>
+                    <li><strong>Cluster 3 :</strong> Taux de mortalité le plus faible (7.54%) avec le plus gros effectif (24819 patients)</li>
+                    <li><strong>Clusters 1 et 2 :</strong> Taux intermédiaires (11.86% et 9.35%)</li>
+                </ul>
+                
+                <h4>⚠️ Points d'attention :</h4>
+                <ul>
+                    <li>Le cluster 4 a un très petit effectif (540 vs 11146-24819 pour les autres)</li>
+                    <li>Les effectifs attendus sont tous > 5 : le test du Chi² est valide</li>
+                    <li>La différence observée peut être due au hasard si p > 0.05</li>
+                </ul>
+                
+                <h4>🔍 Conclusion pratique :</h4>
+                <p>Si le test est significatif, cela confirme que les profils de patients (définis par les clusters) sont associés à des risques de mortalité différents. Cela valide la pertinence de ta classification en clusters pour prédire le risque de décès.</p>
+            `;
+        }
+
+        // Calculer automatiquement au chargement
+        window.onload = function() {
+            calculateChi2();
+        };
+    </script>
+</body>
+</html>
